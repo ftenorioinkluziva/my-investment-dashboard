@@ -12,6 +12,21 @@ const BenchmarkComparison = () => {
   const [isDark, setIsDark] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [benchmarkReturns, setBenchmarkReturns] = useState({});
+  const [showPortfolio, setShowPortfolio] = useState(true);
+
+  // Portfólio Tenas Risk Parity
+  const portfolio = {
+    name: "Tenas Risk Parity",
+    allocation: {
+      'BOVA11': 0.05,  // 5%
+      'XFIX11': 0.14,  // 14%
+      'IB5M11': 0.08,  // 8%
+      'CDI': 0.12,     // 12%
+      'B5P211': 0.20,  // 20% (IMAB5)
+      'USD': 0.06,     // 6%
+      'FIXA11': 0.35   // 35%
+    }
+  };
 
   const benchmarks = [
     { id: 'BOVA11', name: 'BOVA11 (Ibovespa)', color: isDark ? '#60A5FA' : '#2196F3' },
@@ -20,7 +35,8 @@ const BenchmarkComparison = () => {
     { id: 'B5P211', name: 'B5P211 (IMAB5)', color: isDark ? '#FBBF24' : '#FFC107' },
     { id: 'FIXA11', name: 'FIXA11 (Pré)', color: isDark ? '#FB923C' : '#FF9800' },
     { id: 'CDI', name: 'CDI', color: isDark ? '#94A3B8' : '#607D8B' },
-    { id: 'USD', name: 'USD/BRL (Dólar)', color: isDark ? '#D1D5DB' : '#333333' }
+    { id: 'USD', name: 'USD/BRL (Dólar)', color: isDark ? '#D1D5DB' : '#333333' },
+    { id: 'PORTFOLIO', name: 'Tenas Risk Parity', color: isDark ? '#EC4899' : '#E91E63', isPortfolio: true }
   ];
 
   const fetchData = async () => {
@@ -105,7 +121,11 @@ const BenchmarkComparison = () => {
       }
       
       if (allResults.length > 0) {
-        const processedData = processHistoricalData(allResults);
+        let processedData = processHistoricalData(allResults);
+        
+        // Adicionar cálculo do portfólio aos dados
+        processedData = addPortfolioToData(processedData);
+        
         setTimeSeriesData(processedData);
         
         // Calcular e definir configurações do eixo Y
@@ -348,6 +368,40 @@ const BenchmarkComparison = () => {
     return { min, max, ticks };
   };
 
+  // Função para calcular o retorno do portfólio
+  const calculatePortfolioReturn = (data) => {
+    // Para cada ponto de dados, calcular o retorno ponderado do portfólio
+    return data.map(dataPoint => {
+      const portfolioDataPoint = { ...dataPoint };
+      
+      // Verificar se temos dados suficientes para calcular o valor do portfólio
+      const hasAllComponents = Object.keys(portfolio.allocation).every(assetId => 
+        dataPoint[assetId] !== undefined
+      );
+      
+      if (hasAllComponents) {
+        // Calcular o retorno ponderado do portfólio
+        let portfolioReturn = 0;
+        
+        Object.entries(portfolio.allocation).forEach(([assetId, weight]) => {
+          const assetReturn = dataPoint[assetId] || 0;
+          portfolioReturn += assetReturn * weight;
+        });
+        
+        // Adicionar o retorno do portfólio aos dados
+        portfolioDataPoint['PORTFOLIO'] = portfolioReturn;
+      }
+      
+      return portfolioDataPoint;
+    });
+  };
+
+  // Função que adiciona o portfólio aos dados
+  const addPortfolioToData = (data) => {
+    if (!showPortfolio) return data;
+    return calculatePortfolioReturn(data);
+  };
+
   // Efeito para buscar dados quando o período mudar
   useEffect(() => {
     fetchData();
@@ -393,49 +447,68 @@ const BenchmarkComparison = () => {
             </button>
           </div>
           
-          <div className="flex gap-2 mb-6">
-            <button
-              onClick={() => setSelectedPeriod('1Y')}
-              className={`px-4 py-2 rounded-md transition-colors ${
-                selectedPeriod === '1Y'
-                  ? isDark 
-                    ? 'bg-blue-600 text-white' 
-                    : 'bg-blue-600 text-white'
-                  : isDark 
-                    ? 'bg-gray-700 hover:bg-gray-600' 
-                    : 'bg-gray-100 hover:bg-gray-200'
-              }`}
-            >
-              1 Ano
-            </button>
-            <button
-              onClick={() => setSelectedPeriod('3Y')}
-              className={`px-4 py-2 rounded-md transition-colors ${
-                selectedPeriod === '3Y'
-                  ? isDark 
-                    ? 'bg-blue-600 text-white' 
-                    : 'bg-blue-600 text-white'
-                  : isDark 
-                    ? 'bg-gray-700 hover:bg-gray-600' 
-                    : 'bg-gray-100 hover:bg-gray-200'
-              }`}
-            >
-              3 Anos
-            </button>
-            <button
-              onClick={() => setSelectedPeriod('5Y')}
-              className={`px-4 py-2 rounded-md transition-colors ${
-                selectedPeriod === '5Y'
-                  ? isDark 
-                    ? 'bg-blue-600 text-white' 
-                    : 'bg-blue-600 text-white'
-                  : isDark 
-                    ? 'bg-gray-700 hover:bg-gray-600' 
-                    : 'bg-gray-100 hover:bg-gray-200'
-              }`}
-            >
-              5 Anos
-            </button>
+          <div className="flex flex-wrap justify-between mb-6">
+            <div className="flex gap-2">
+              <button
+                onClick={() => setSelectedPeriod('1Y')}
+                className={`px-4 py-2 rounded-md transition-colors ${
+                  selectedPeriod === '1Y'
+                    ? isDark 
+                      ? 'bg-blue-600 text-white' 
+                      : 'bg-blue-600 text-white'
+                    : isDark 
+                      ? 'bg-gray-700 hover:bg-gray-600' 
+                      : 'bg-gray-100 hover:bg-gray-200'
+                }`}
+              >
+                1 Ano
+              </button>
+              <button
+                onClick={() => setSelectedPeriod('3Y')}
+                className={`px-4 py-2 rounded-md transition-colors ${
+                  selectedPeriod === '3Y'
+                    ? isDark 
+                      ? 'bg-blue-600 text-white' 
+                      : 'bg-blue-600 text-white'
+                    : isDark 
+                      ? 'bg-gray-700 hover:bg-gray-600' 
+                      : 'bg-gray-100 hover:bg-gray-200'
+                }`}
+              >
+                3 Anos
+              </button>
+              <button
+                onClick={() => setSelectedPeriod('5Y')}
+                className={`px-4 py-2 rounded-md transition-colors ${
+                  selectedPeriod === '5Y'
+                    ? isDark 
+                      ? 'bg-blue-600 text-white' 
+                      : 'bg-blue-600 text-white'
+                    : isDark 
+                      ? 'bg-gray-700 hover:bg-gray-600' 
+                      : 'bg-gray-100 hover:bg-gray-200'
+                }`}
+              >
+                5 Anos
+              </button>
+            </div>
+            
+            <div className="mt-2 sm:mt-0">
+              <button
+                onClick={() => setShowPortfolio(!showPortfolio)}
+                className={`px-4 py-2 rounded-md transition-colors ${
+                  showPortfolio
+                    ? isDark 
+                      ? 'bg-pink-600 text-white' 
+                      : 'bg-pink-600 text-white'
+                    : isDark 
+                      ? 'bg-gray-700 hover:bg-gray-600' 
+                      : 'bg-gray-100 hover:bg-gray-200'
+                }`}
+              >
+                {showPortfolio ? 'Ocultar Tenas Risk Parity' : 'Mostrar Tenas Risk Parity'}
+              </button>
+            </div>
           </div>
 
           {timeSeriesData.length > 0 ? (
@@ -485,6 +558,11 @@ const BenchmarkComparison = () => {
                     }}
                   />
                   {benchmarks.map((benchmark) => {
+                    // Pular o portfólio se estiver oculto
+                    if (benchmark.isPortfolio && !showPortfolio) {
+                      return null;
+                    }
+                    
                     // Verificar se temos dados para este benchmark
                     const hasData = timeSeriesData.some(dataPoint => 
                       dataPoint[benchmark.id] !== undefined && dataPoint[benchmark.id] !== null
@@ -502,7 +580,7 @@ const BenchmarkComparison = () => {
                         name={benchmark.name}
                         stroke={benchmark.color}
                         dot={false}
-                        strokeWidth={2}
+                        strokeWidth={benchmark.isPortfolio ? 3 : 2}
                         activeDot={{ r: 6 }}
                         isAnimationActive={true}
                       />
@@ -518,6 +596,26 @@ const BenchmarkComparison = () => {
           )}
 
           <div className="mt-6">
+            <div className="mb-4">
+              <h3 className="text-lg font-semibold mb-2">Composição do Tenas Risk Parity</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                {Object.entries(portfolio.allocation).map(([assetId, weight]) => {
+                  const benchmark = benchmarks.find(b => b.id === assetId);
+                  return (
+                    <div key={assetId} className={`p-2 rounded ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                      <div className="flex items-center">
+                        <div 
+                          className="w-3 h-3 rounded-full mr-2" 
+                          style={{ backgroundColor: benchmark?.color || '#ccc' }}
+                        />
+                        <span className="text-sm font-medium">{benchmark?.name || assetId}: {(weight * 100).toFixed(0)}%</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            
             <table className="w-full text-sm">
               <thead>
                 <tr>
@@ -527,21 +625,36 @@ const BenchmarkComparison = () => {
               </thead>
               <tbody>
                 {benchmarks.map((benchmark, index) => {
+                  // Se for o portfólio e estiver oculto, não mostrar na tabela
+                  if (benchmark.isPortfolio && !showPortfolio) {
+                    return null;
+                  }
+                  
                   const returnValue = benchmarkReturns[benchmark.id];
                   const hasReturn = returnValue !== undefined && returnValue !== null;
                   
+                
+                  
+                  const isPortfolio = benchmark.isPortfolio;
+                  
                   return (
-                    <tr key={benchmark.id} className={`border-t ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+                    <tr 
+                      key={benchmark.id} 
+                      className={`border-t ${isDark ? 'border-gray-700' : 'border-gray-200'} ${isPortfolio ? (isDark ? 'bg-gray-700/30' : 'bg-pink-50') : ''}`}
+                    >
                       <td className="py-2">
                         <div className="flex items-center">
                           <div 
-                            className="w-3 h-3 rounded-full mr-2" 
+                            className={`w-3 h-3 rounded-full mr-2 ${isPortfolio ? 'animate-pulse' : ''}`}
                             style={{ backgroundColor: benchmark.color }}
                           />
-                          {benchmark.name}
+                          <span className={isPortfolio ? 'font-bold' : ''}>
+                            {benchmark.name}
+                            {isPortfolio && ' 🔥'}
+                          </span>
                         </div>
                       </td>
-                      <td className="text-right py-2">
+                      <td className={`text-right py-2 ${isPortfolio ? 'font-bold' : ''}`}>
                         {hasReturn ? `${returnValue.toFixed(2)}%` : '-'}
                       </td>
                     </tr>
