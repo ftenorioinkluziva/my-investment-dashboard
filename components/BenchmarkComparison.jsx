@@ -13,7 +13,6 @@ const BenchmarkComparison = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [benchmarkReturns, setBenchmarkReturns] = useState({});
   const [showPortfolio, setShowPortfolio] = useState(true);
-
   const [isCustomPeriod, setIsCustomPeriod] = useState(false);
   const [customDateRange, setCustomDateRange] = useState({ startDate: null, endDate: null });
 
@@ -63,8 +62,8 @@ const BenchmarkComparison = () => {
         endDate = now;
       }
       
-      const startTimestamp = startDate.getTime();
-      const endTimestamp = endDate.getTime();
+     // const startTimestamp = startDate.getTime();
+     // const endTimestamp = endDate.getTime();
       
       console.log(`Período selecionado: ${startDate.toISOString()} até ${endDate.toISOString()}`);
       
