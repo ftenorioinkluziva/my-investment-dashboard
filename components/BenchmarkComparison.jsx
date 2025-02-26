@@ -47,6 +47,7 @@ const BenchmarkComparison = () => {
 
   const fetchData = async () => {
     try {
+      console.log("Iniciando fetchData");
       setIsLoading(true);
       
       // Definir o período para busca dos dados
@@ -128,7 +129,7 @@ const BenchmarkComparison = () => {
           data: []
         };
       }
-      
+      console.log("Fazendo requisições para API");
       // Combinar todos os resultados
       const stockResults = await Promise.all(stockPromises);
       const allResults = [...stockResults.filter(result => result.data && result.data.length > 0)];
@@ -142,6 +143,7 @@ const BenchmarkComparison = () => {
       }
       
       if (allResults.length > 0) {
+        console.log("Resultados recebidos:", allResults);
         let processedData = processHistoricalData(allResults);
         
         // Adicionar cálculo do portfólio aos dados
@@ -164,16 +166,20 @@ const BenchmarkComparison = () => {
           });
           
           setBenchmarkReturns(returns);
+
         }
       } else {
         console.error('No valid data returned from API');
         setTimeSeriesData([]);
         setBenchmarkReturns({});
       }
+      console.log("Dados processados com sucesso, atualizando estado");
     } catch (error) {
-      console.error('Error fetching data:', error);
+      console.error('Erro detalhado ao buscar dados:', error);
+      console.error(error.stack); 
     } finally {
       setIsLoading(false);
+      console.log("Loading finalizado");
     }
   };
 

@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 
 export async function GET(request: NextRequest) {
+  console.log("Endpoint /api/yahoo/historical chamado");
   const { searchParams } = new URL(request.url);
   const symbol = searchParams.get('symbol');
   const period = searchParams.get('period') || '3Y';
-
+  console.log(`Parâmetros recebidos: symbol=${symbol}, period=${period}`);
+  
   if (!symbol) {
     return NextResponse.json({ error: 'Symbol parameter is required' }, { status: 400 });
   }
@@ -17,6 +19,7 @@ export async function GET(request: NextRequest) {
     });
 
     if (!asset) {
+      console.log(`Ativo ${symbol} não encontrado no banco de dados`);
       return NextResponse.json({ error: 'Asset not found' }, { status: 404 });
     }
 
