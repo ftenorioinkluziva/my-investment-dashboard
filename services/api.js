@@ -33,6 +33,39 @@ export async function fetchHistoricalData(symbol, resolution = 'D', period = '5Y
   }
 }
 
+// Função para buscar dados históricos com intervalo personalizado
+export async function fetchCustomHistoricalData(symbol, startDate, endDate) {
+  try {
+    // Formatar as datas para ISO string para enviar como parâmetros
+    const formattedStartDate = startDate instanceof Date 
+      ? startDate.toISOString() 
+      : new Date(startDate).toISOString();
+    
+    const formattedEndDate = endDate instanceof Date 
+      ? endDate.toISOString() 
+      : new Date(endDate).toISOString();
+
+    // Verificar se as datas são válidas
+    if (isNaN(new Date(formattedStartDate).getTime()) || isNaN(new Date(formattedEndDate).getTime())) {
+      throw new Error('Invalid date format');
+    }
+    
+    // Fazer requisição para a API local
+    const response = await fetch(`/api/historical/custom?symbol=${symbol}&startDate=${formattedStartDate}&endDate=${formattedEndDate}`);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    console.log(`Fetched custom data for ${symbol} from ${formattedStartDate} to ${formattedEndDate}`);
+    return data;
+  } catch (error) {
+    console.error(`Error fetching custom historical data for ${symbol}:`, error);
+    throw error;
+  }
+}
+
 // Função original, renomeada
 async function fetchHistoricalDataFromAPI(symbol, resolution = 'D') {
   const token = await getToken();
@@ -66,7 +99,6 @@ async function fetchHistoricalDataFromAPI(symbol, resolution = 'D') {
     }
 
     const data = await response.json();
-    //console.log('Historical data for', symbol, ':', data);
     return data;
   } catch (error) {
     console.error('Error fetching historical data from API:', error);
@@ -97,10 +129,8 @@ export async function fetchUSDData(startTimestamp, endTimestamp) {
     const period2 = Math.floor(endTimestamp / 1000);
     
     // Fazer requisição para nossa API local em vez do Yahoo Finance diretamente
-    //const url = `/api/yahoo?symbol=USDBRL=X&interval=1d&period1=${period1}&period2=${period2}`;
-    const url = `http://localhost:3000/api/yahoo?symbol=USDBRL=X&interval=1d&period1=${period1}&period2=${period2}`;
-//    const url = `http://localhost:3000/api/yahoo?symbol=USDBRL=X&interval=1d&period1=1577847600&period2=1740532985`;
-
+    const url = `/api/yahoo?symbol=USDBRL=X&interval=1d&period1=${period1}&period2=${period2}`;
+    
     console.log('Fetching USD data from URL:', url);
     
     const response = await fetch(url);
@@ -113,39 +143,6 @@ export async function fetchUSDData(startTimestamp, endTimestamp) {
     return data;
   } catch (error) {
     console.error('Error fetching USD/BRL data:', error);
-    throw error;
-  }
-}
-
-
-// Função para buscar dados históricos com intervalo personalizado
-export async function fetchCustomHistoricalData(symbol, startDate, endDate) {
-  try {
-    // Formatar as datas para ISO string para enviar como parâmetros
-    const formattedStartDate = startDate instanceof Date 
-      ? startDate.toISOString() 
-      : new Date(startDate).toISOString();
-    
-    const formattedEndDate = endDate instanceof Date 
-      ? endDate.toISOString() 
-      : new Date(endDate).toISOString();
-
-    // Verificar se as datas são válidas
-    if (isNaN(new Date(formattedStartDate).getTime()) || isNaN(new Date(formattedEndDate).getTime())) {
-      throw new Error('Invalid date format');
-    }
-    
-    // Fazer requisição para a API local
-    const response = await fetch(`/api/historical/custom?symbol=${symbol}&startDate=${formattedStartDate}&endDate=${formattedEndDate}`);
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error(`Error fetching custom historical data for ${symbol}:`, error);
     throw error;
   }
 }
