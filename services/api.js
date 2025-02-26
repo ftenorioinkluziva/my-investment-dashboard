@@ -10,7 +10,31 @@ async function getToken() {
   return authToken;
 }
 
-export async function fetchHistoricalData(symbol, resolution = 'D') {
+export async function fetchHistoricalData(symbol, resolution = 'D', period = '3Y') {
+  try {
+    // Primeiro, tente obter os dados do banco local
+    const localResponse = await fetch(`/api/historical?symbol=${symbol}&period=${period}`);
+    
+    if (localResponse.ok) {
+      const data = await localResponse.json();
+      if (data && data.data && data.data.length > 0) {
+        console.log(`Fetched ${symbol} data from local database`);
+        return data;
+      }
+    }
+    
+    // Se não conseguir do banco local, busque da API externa
+    console.log(`Fetching ${symbol} data from external API`);
+    return fetchHistoricalDataFromAPI(symbol, resolution);
+  } catch (error) {
+    console.error('Error fetching historical data:', error);
+    // Se falhar, tente a API externa
+    return fetchHistoricalDataFromAPI(symbol, resolution);
+  }
+}
+
+// Função original, renomeada
+async function fetchHistoricalDataFromAPI(symbol, resolution = 'D') {
   const token = await getToken();
   const now = Date.now();
   const threeYearsAgo = now - (3 * 365 * 24 * 60 * 60 * 1000);
@@ -36,7 +60,7 @@ export async function fetchHistoricalData(symbol, resolution = 'D') {
       if (response.status === 401) {
         // Token expirado, limpa o token e tenta novamente
         authToken = null;
-        return fetchHistoricalData(symbol, resolution);
+        return fetchHistoricalDataFromAPI(symbol, resolution);
       }
       throw new Error(`HTTP error! status: ${response.status}`);
     }
@@ -45,7 +69,7 @@ export async function fetchHistoricalData(symbol, resolution = 'D') {
     console.log('Historical data for', symbol, ':', data);
     return data;
   } catch (error) {
-    console.error('Error fetching historical data:', error);
+    console.error('Error fetching historical data from API:', error);
     throw error;
   }
 }
