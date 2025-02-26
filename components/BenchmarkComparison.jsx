@@ -3,7 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Moon, Sun } from 'lucide-react';
-import { fetchHistoricalData, fetchCDIData, fetchUSDData } from '../services/api';
+import { fetchHistoricalData, fetchCDIData, fetchUSDData, fetchCustomHistoricalData } from '../services/api';
+import DateRangePicker from './DateRangePicker';
+
 
 const BenchmarkComparison = () => {
   const [selectedPeriod, setSelectedPeriod] = useState('1Y');
@@ -13,6 +15,10 @@ const BenchmarkComparison = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [benchmarkReturns, setBenchmarkReturns] = useState({});
   const [showPortfolio, setShowPortfolio] = useState(true);
+
+  const [isCustomPeriod, setIsCustomPeriod] = useState(false);
+  const [customDateRange, setCustomDateRange] = useState({ startDate: null, endDate: null });
+
 
   // Portfólio Tenas Risk Parity
   const portfolio = {
@@ -44,21 +50,36 @@ const BenchmarkComparison = () => {
       setIsLoading(true);
       
       // Definir o período para busca dos dados
-      const now = new Date();
-      // Para 1 ano, 3 anos ou 5 anos, dependendo do selectedPeriod
-      const yearsToSubtract = selectedPeriod === '1Y' ? 1 : selectedPeriod === '3Y' ? 3 : 5;
-      const startDate = new Date();
-      startDate.setFullYear(now.getFullYear() - yearsToSubtract);
+      let startDate, endDate;
+      
+      if (isCustomPeriod && customDateRange.startDate && customDateRange.endDate) {
+        // Usar período personalizado
+        startDate = new Date(customDateRange.startDate);
+        endDate = new Date(customDateRange.endDate);
+      } else {
+        // Usar período predefinido (1, 3 ou 5 anos)
+        const now = new Date();
+        const yearsToSubtract = selectedPeriod === '1Y' ? 1 : selectedPeriod === '3Y' ? 3 : 5;
+        startDate = new Date();
+        startDate.setFullYear(now.getFullYear() - yearsToSubtract);
+        endDate = now;
+      }
       
       const startTimestamp = startDate.getTime();
-      const endTimestamp = now.getTime();
+      const endTimestamp = endDate.getTime();
       
       // Buscar dados dos benchmarks (exceto CDI e USD)
       const stockPromises = benchmarks
         .filter(benchmark => benchmark.id !== 'CDI' && benchmark.id !== 'USD')
         .map(async (benchmark) => {
           try {
-            const data = await fetchHistoricalData(benchmark.id);
+            // Se estiver usando período personalizado, use a nova função
+            let data;
+            if (isCustomPeriod) {
+              data = await fetchCustomHistoricalData(benchmark.id, startDate, endDate);
+            } else {
+              data = await fetchHistoricalData(benchmark.id);
+            }
             return {
               id: benchmark.id,
               data: data.data
@@ -155,7 +176,7 @@ const BenchmarkComparison = () => {
       setIsLoading(false);
     }
   };
-  
+
   // Função para processar os dados do CDI
   const processCDIData = (cdiData, startTimestamp, endTimestamp) => {
     // Filtramos apenas os dados dentro do período selecionado
@@ -402,10 +423,32 @@ const BenchmarkComparison = () => {
     return calculatePortfolioReturn(data);
   };
 
-  // Efeito para buscar dados quando o período mudar
-  useEffect(() => {
+//Handler para quando um período personalizado é selecionado
+const handleCustomPeriodSelect = (startDate, endDate) => {
+  setCustomDateRange({ startDate, endDate });
+  setIsCustomPeriod(true);
+  // Desmarcar os botões de período predefinido
+  setSelectedPeriod('custom');
+};
+
+//Atualizar os handlers para botões de período
+const handlePeriodSelect = (period) => {
+  setSelectedPeriod(period);
+  setIsCustomPeriod(false);
+  fetchData();
+};
+
+//Atualizar o useEffect para reagir às mudanças no período personalizado
+useEffect(() => {
+  if (isCustomPeriod && customDateRange.startDate && customDateRange.endDate) {
     fetchData();
-  }, [selectedPeriod]);
+  }
+}, [isCustomPeriod, customDateRange]);
+
+  // Efeito para buscar dados quando o período mudar
+/*   useEffect(() => {
+    fetchData();
+  }, [selectedPeriod]); */
 
   // Efeito para ajustar tema escuro com base nas preferências do sistema
   useEffect(() => {
@@ -414,6 +457,10 @@ const BenchmarkComparison = () => {
       setIsDark(prefersDark);
     }
   }, []);
+
+
+
+
 
   // Componente de carregamento
   if (isLoading) {
@@ -448,68 +495,72 @@ const BenchmarkComparison = () => {
           </div>
           
           <div className="flex flex-wrap justify-between mb-6">
-            <div className="flex gap-2">
-              <button
-                onClick={() => setSelectedPeriod('1Y')}
-                className={`px-4 py-2 rounded-md transition-colors ${
-                  selectedPeriod === '1Y'
-                    ? isDark 
-                      ? 'bg-blue-600 text-white' 
-                      : 'bg-blue-600 text-white'
-                    : isDark 
-                      ? 'bg-gray-700 hover:bg-gray-600' 
-                      : 'bg-gray-100 hover:bg-gray-200'
-                }`}
-              >
-                1 Ano
-              </button>
-              <button
-                onClick={() => setSelectedPeriod('3Y')}
-                className={`px-4 py-2 rounded-md transition-colors ${
-                  selectedPeriod === '3Y'
-                    ? isDark 
-                      ? 'bg-blue-600 text-white' 
-                      : 'bg-blue-600 text-white'
-                    : isDark 
-                      ? 'bg-gray-700 hover:bg-gray-600' 
-                      : 'bg-gray-100 hover:bg-gray-200'
-                }`}
-              >
-                3 Anos
-              </button>
-              <button
-                onClick={() => setSelectedPeriod('5Y')}
-                className={`px-4 py-2 rounded-md transition-colors ${
-                  selectedPeriod === '5Y'
-                    ? isDark 
-                      ? 'bg-blue-600 text-white' 
-                      : 'bg-blue-600 text-white'
-                    : isDark 
-                      ? 'bg-gray-700 hover:bg-gray-600' 
-                      : 'bg-gray-100 hover:bg-gray-200'
-                }`}
-              >
-                5 Anos
-              </button>
-            </div>
-            
-            <div className="mt-2 sm:mt-0">
-              <button
-                onClick={() => setShowPortfolio(!showPortfolio)}
-                className={`px-4 py-2 rounded-md transition-colors ${
-                  showPortfolio
-                    ? isDark 
-                      ? 'bg-pink-600 text-white' 
-                      : 'bg-pink-600 text-white'
-                    : isDark 
-                      ? 'bg-gray-700 hover:bg-gray-600' 
-                      : 'bg-gray-100 hover:bg-gray-200'
-                }`}
-              >
-                {showPortfolio ? 'Ocultar Tenas Risk Parity' : 'Mostrar Tenas Risk Parity'}
-              </button>
-            </div>
-          </div>
+  <div className="flex gap-2">
+    <button
+      onClick={() => handlePeriodSelect('1Y')}
+      className={`px-4 py-2 rounded-md transition-colors ${
+        selectedPeriod === '1Y'
+          ? isDark 
+            ? 'bg-blue-600 text-white' 
+            : 'bg-blue-600 text-white'
+          : isDark 
+            ? 'bg-gray-700 hover:bg-gray-600' 
+            : 'bg-gray-100 hover:bg-gray-200'
+      }`}
+    >
+      1 Ano
+    </button>
+    <button
+      onClick={() => handlePeriodSelect('3Y')}
+      className={`px-4 py-2 rounded-md transition-colors ${
+        selectedPeriod === '3Y'
+          ? isDark 
+            ? 'bg-blue-600 text-white' 
+            : 'bg-blue-600 text-white'
+          : isDark 
+            ? 'bg-gray-700 hover:bg-gray-600' 
+            : 'bg-gray-100 hover:bg-gray-200'
+      }`}
+    >
+      3 Anos
+    </button>
+    <button
+      onClick={() => handlePeriodSelect('5Y')}
+      className={`px-4 py-2 rounded-md transition-colors ${
+        selectedPeriod === '5Y'
+          ? isDark 
+            ? 'bg-blue-600 text-white' 
+            : 'bg-blue-600 text-white'
+          : isDark 
+            ? 'bg-gray-700 hover:bg-gray-600' 
+            : 'bg-gray-100 hover:bg-gray-200'
+      }`}
+    >
+      5 Anos
+    </button>
+    <DateRangePicker 
+      onApply={handleCustomPeriodSelect} 
+      isDark={isDark} 
+    />
+  </div>
+  
+  <div className="mt-2 sm:mt-0">
+    <button
+      onClick={() => setShowPortfolio(!showPortfolio)}
+      className={`px-4 py-2 rounded-md transition-colors ${
+        showPortfolio
+          ? isDark 
+            ? 'bg-pink-600 text-white' 
+            : 'bg-pink-600 text-white'
+          : isDark 
+            ? 'bg-gray-700 hover:bg-gray-600' 
+            : 'bg-gray-100 hover:bg-gray-200'
+      }`}
+    >
+      {showPortfolio ? 'Ocultar Tenas Risk Parity' : 'Mostrar Tenas Risk Parity'}
+    </button>
+  </div>
+</div>
 
           {timeSeriesData.length > 0 ? (
             <div className="h-96">
@@ -620,7 +671,13 @@ const BenchmarkComparison = () => {
               <thead>
                 <tr>
                   <th className="text-left py-2">Benchmark</th>
-                  <th className="text-right py-2">Retorno {selectedPeriod === '1Y' ? '1 Ano' : selectedPeriod === '3Y' ? '3 Anos' : '5 Anos'}</th>
+                  <th className="text-right py-2">
+                    Retorno {
+                      isCustomPeriod 
+                        ? `${new Date(customDateRange.startDate).toLocaleDateString('pt-BR')} - ${new Date(customDateRange.endDate).toLocaleDateString('pt-BR')}` 
+                        : selectedPeriod === '1Y' ? '1 Ano' : selectedPeriod === '3Y' ? '3 Anos' : '5 Anos'
+                    }
+                  </th>
                 </tr>
               </thead>
               <tbody>
