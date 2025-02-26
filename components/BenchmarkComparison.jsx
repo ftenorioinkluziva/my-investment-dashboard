@@ -3,9 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Moon, Sun } from 'lucide-react';
-import { fetchHistoricalData, fetchCDIData, fetchUSDData, fetchCustomHistoricalData } from '../services/api';
 import DateRangePicker from './DateRangePicker';
-
 
 const BenchmarkComparison = () => {
   const [selectedPeriod, setSelectedPeriod] = useState('1Y');
@@ -18,7 +16,6 @@ const BenchmarkComparison = () => {
 
   const [isCustomPeriod, setIsCustomPeriod] = useState(false);
   const [customDateRange, setCustomDateRange] = useState({ startDate: null, endDate: null });
-
 
   // Portfólio Tenas Risk Parity
   const portfolio = {
@@ -42,7 +39,7 @@ const BenchmarkComparison = () => {
     { id: 'FIXA11', name: 'FIXA11 (Pré)', color: isDark ? '#FB923C' : '#FF9800' },
     { id: 'CDI', name: 'CDI', color: isDark ? '#94A3B8' : '#607D8B' },
     { id: 'USD', name: 'USD/BRL (Dólar)', color: isDark ? '#D1D5DB' : '#333333' },
-   // { id: 'PORTFOLIO', name: 'Tenas Risk Parity', color: isDark ? '#EC4899' : '#E91E63', isPortfolio: true }
+    { id: 'PORTFOLIO', name: 'Tenas Risk Parity', color: isDark ? '#EC4899' : '#E91E63', isPortfolio: true }
   ];
 
   const fetchData = async () => {
@@ -80,14 +77,14 @@ const BenchmarkComparison = () => {
         console.error('API ping test failed:', pingError);
       }
       
-      // Buscar dados dos benchmarks (exceto CDI e USD)
+      // Buscar dados dos benchmarks
       const stockPromises = benchmarks
-        .filter(benchmark => benchmark.id !== 'CDI' && benchmark.id !== 'USD')
+        .filter(benchmark => !benchmark.isPortfolio) // Excluir o portfólio, que é calculado depois
         .map(async (benchmark) => {
           try {
             console.log(`Buscando dados para ${benchmark.id}`);
-            // Se estiver usando período personalizado, use a nova função
             let response;
+            
             if (isCustomPeriod) {
               response = await fetch(`/api/yahoo/historical/custom?symbol=${benchmark.id}&startDate=${startDate.toISOString()}&endDate=${endDate.toISOString()}`);
             } else {
@@ -116,9 +113,27 @@ const BenchmarkComparison = () => {
           }
         });
       
-      // Continuar com o resto da função fetchData original...
-      // ...
+      // Esperar todas as requisições terminarem
+      const stockResults = await Promise.all(stockPromises);
+      console.log("Todos os dados recebidos, resultados:", stockResults);
       
+      // Processar dados históricos
+      const processedData = processHistoricalData(stockResults);
+      console.log("Dados processados:", processedData);
+      
+      // Adicionar portfólio se necessário
+      const dataWithPortfolio = showPortfolio ? calculatePortfolioReturn(processedData) : processedData;
+      
+      // Calcular configuração do eixo Y
+      const calculatedYAxisConfig = calculateYAxisConfig(dataWithPortfolio);
+      
+      // Calcular retornos para exibição na tabela
+      const calculatedReturns = calculateBenchmarkReturns(dataWithPortfolio);
+      
+      // Atualizar estado
+      setTimeSeriesData(dataWithPortfolio);
+      setYAxisConfig(calculatedYAxisConfig);
+      setBenchmarkReturns(calculatedReturns);
     } catch (error) {
       console.error('Erro detalhado ao buscar dados:', error);
       console.error(error.stack);
@@ -127,66 +142,6 @@ const BenchmarkComparison = () => {
     } finally {
       setIsLoading(false);
       console.log("Loading finalizado");
-    }
-  };
-  // Função para processar os dados do CDI
-  const processCDIData = (cdiData, startTimestamp, endTimestamp) => {
-    // Filtramos apenas os dados dentro do período selecionado
-    const filteredData = cdiData.filter(item => {
-      const dateParts = item.data.split('/');
-      const itemDate = new Date(`${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`);
-      const timestamp = itemDate.getTime();
-      return timestamp >= startTimestamp && timestamp <= endTimestamp;
-    });
-    
-    // Se não houver dados filtrados, retorna array vazio
-    if (filteredData.length === 0) return [];
-    
-    // Agora vamos calcular o CDI acumulado
-    // Como os valores já são percentuais diários, precisamos calcular o acumulado
-    // Para simular um investimento que segue o CDI
-    const processedData = [];
-    let accumulatedCDI = 1.0; // Valor inicial (100%)
-    
-    filteredData.forEach(item => {
-      const dateParts = item.data.split('/');
-      const date = new Date(`${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`);
-      const value = parseFloat(item.valor.replace(',', '.'));
-      
-      // Acumular o CDI (multiplicar pelo fator diário)
-      accumulatedCDI *= (1 + value / 100);
-      
-      processedData.push({
-        close: accumulatedCDI,
-        unixTime: date.getTime()
-      });
-    });
-    
-    return processedData;
-  };
-
-  // Função para processar os dados do USD
-  const processUSDData = (yahooData) => {
-    try {
-      const result = yahooData.chart.result[0];
-      const timestamps = result.timestamp || [];
-      const closePrices = result.indicators.quote[0].close || [];
-      
-      // Converter timestamp para milissegundos e extrair preços de fechamento
-      const processedData = [];
-      for (let i = 0; i < timestamps.length; i++) {
-        if (closePrices[i] !== null && closePrices[i] !== undefined) {
-          processedData.push({
-            close: closePrices[i],
-            unixTime: timestamps[i] * 1000 // Converter de segundos para milissegundos
-          });
-        }
-      }
-      
-      return processedData;
-    } catch (error) {
-      console.error('Error processing USD data:', error);
-      return [];
     }
   };
 
@@ -368,40 +323,48 @@ const BenchmarkComparison = () => {
       return portfolioDataPoint;
     });
   };
-
-  // Função que adiciona o portfólio aos dados
-  const addPortfolioToData = (data) => {
-    if (!showPortfolio) return data;
-    return calculatePortfolioReturn(data);
+  
+  // Função para calcular os retornos para exibição na tabela
+  const calculateBenchmarkReturns = (data) => {
+    if (!data || data.length === 0) {
+      return {};
+    }
+    
+    // Pegar o último ponto de dados (mais recente)
+    const lastDataPoint = data[data.length - 1];
+    
+    // Extrair os retornos de cada benchmark
+    const returns = {};
+    benchmarks.forEach(benchmark => {
+      if (lastDataPoint[benchmark.id] !== undefined) {
+        returns[benchmark.id] = lastDataPoint[benchmark.id];
+      }
+    });
+    
+    return returns;
   };
 
-//Handler para quando um período personalizado é selecionado
-const handleCustomPeriodSelect = (startDate, endDate) => {
-  setCustomDateRange({ startDate, endDate });
-  setIsCustomPeriod(true);
-  // Desmarcar os botões de período predefinido
-  setSelectedPeriod('custom');
-};
+  // Handler para quando um período personalizado é selecionado
+  const handleCustomPeriodSelect = (startDate, endDate) => {
+    setCustomDateRange({ startDate, endDate });
+    setIsCustomPeriod(true);
+    // Desmarcar os botões de período predefinido
+    setSelectedPeriod('custom');
+  };
 
-//Atualizar os handlers para botões de período
-const handlePeriodSelect = (period) => {
-  setSelectedPeriod(period);
-  setIsCustomPeriod(false);
-  fetchData();
-};
+  // Atualizar os handlers para botões de período
+  const handlePeriodSelect = (period) => {
+    setSelectedPeriod(period);
+    setIsCustomPeriod(false);
+  };
 
-// Correto - Executa quando o componente monta e quando o período muda
-useEffect(() => {
-  console.log('Executando fetchData no useEffect...');
-  fetchData();
-}, [selectedPeriod]); // selectedPeriod como dependência
-
-useEffect(() => {
-  console.log('Executando fetchData no useEffect...');
-  if (!isCustomPeriod || (isCustomPeriod && customDateRange.startDate && customDateRange.endDate)) {
-    fetchData();
-  }
-}, [selectedPeriod, isCustomPeriod, customDateRange]);
+  // Executa quando o componente monta e quando o período muda
+  useEffect(() => {
+    console.log('Executando fetchData no useEffect...');
+    if (!isCustomPeriod || (isCustomPeriod && customDateRange.startDate && customDateRange.endDate)) {
+      fetchData();
+    }
+  }, [selectedPeriod, isCustomPeriod, customDateRange, showPortfolio]);
 
   // Efeito para ajustar tema escuro com base nas preferências do sistema
   useEffect(() => {
@@ -410,10 +373,6 @@ useEffect(() => {
       setIsDark(prefersDark);
     }
   }, []);
-
-
-
-
 
   // Componente de carregamento
   if (isLoading) {
@@ -448,72 +407,72 @@ useEffect(() => {
           </div>
           
           <div className="flex flex-wrap justify-between mb-6">
-  <div className="flex gap-2">
-    <button
-      onClick={() => handlePeriodSelect('1Y')}
-      className={`px-4 py-2 rounded-md transition-colors ${
-        selectedPeriod === '1Y'
-          ? isDark 
-            ? 'bg-blue-600 text-white' 
-            : 'bg-blue-600 text-white'
-          : isDark 
-            ? 'bg-gray-700 hover:bg-gray-600' 
-            : 'bg-gray-100 hover:bg-gray-200'
-      }`}
-    >
-      1 Ano
-    </button>
-    <button
-      onClick={() => handlePeriodSelect('3Y')}
-      className={`px-4 py-2 rounded-md transition-colors ${
-        selectedPeriod === '3Y'
-          ? isDark 
-            ? 'bg-blue-600 text-white' 
-            : 'bg-blue-600 text-white'
-          : isDark 
-            ? 'bg-gray-700 hover:bg-gray-600' 
-            : 'bg-gray-100 hover:bg-gray-200'
-      }`}
-    >
-      3 Anos
-    </button>
-    <button
-      onClick={() => handlePeriodSelect('5Y')}
-      className={`px-4 py-2 rounded-md transition-colors ${
-        selectedPeriod === '5Y'
-          ? isDark 
-            ? 'bg-blue-600 text-white' 
-            : 'bg-blue-600 text-white'
-          : isDark 
-            ? 'bg-gray-700 hover:bg-gray-600' 
-            : 'bg-gray-100 hover:bg-gray-200'
-      }`}
-    >
-      5 Anos
-    </button>
-    <DateRangePicker 
-      onApply={handleCustomPeriodSelect} 
-      isDark={isDark} 
-    />
-  </div>
-  
-  <div className="mt-2 sm:mt-0">
-    <button
-      onClick={() => setShowPortfolio(!showPortfolio)}
-      className={`px-4 py-2 rounded-md transition-colors ${
-        showPortfolio
-          ? isDark 
-            ? 'bg-pink-600 text-white' 
-            : 'bg-pink-600 text-white'
-          : isDark 
-            ? 'bg-gray-700 hover:bg-gray-600' 
-            : 'bg-gray-100 hover:bg-gray-200'
-      }`}
-    >
-      {showPortfolio ? 'Ocultar Tenas Risk Parity' : 'Mostrar Tenas Risk Parity'}
-    </button>
-  </div>
-</div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => handlePeriodSelect('1Y')}
+                className={`px-4 py-2 rounded-md transition-colors ${
+                  selectedPeriod === '1Y'
+                    ? isDark 
+                      ? 'bg-blue-600 text-white' 
+                      : 'bg-blue-600 text-white'
+                    : isDark 
+                      ? 'bg-gray-700 hover:bg-gray-600' 
+                      : 'bg-gray-100 hover:bg-gray-200'
+                }`}
+              >
+                1 Ano
+              </button>
+              <button
+                onClick={() => handlePeriodSelect('3Y')}
+                className={`px-4 py-2 rounded-md transition-colors ${
+                  selectedPeriod === '3Y'
+                    ? isDark 
+                      ? 'bg-blue-600 text-white' 
+                      : 'bg-blue-600 text-white'
+                    : isDark 
+                      ? 'bg-gray-700 hover:bg-gray-600' 
+                      : 'bg-gray-100 hover:bg-gray-200'
+                }`}
+              >
+                3 Anos
+              </button>
+              <button
+                onClick={() => handlePeriodSelect('5Y')}
+                className={`px-4 py-2 rounded-md transition-colors ${
+                  selectedPeriod === '5Y'
+                    ? isDark 
+                      ? 'bg-blue-600 text-white' 
+                      : 'bg-blue-600 text-white'
+                    : isDark 
+                      ? 'bg-gray-700 hover:bg-gray-600' 
+                      : 'bg-gray-100 hover:bg-gray-200'
+                }`}
+              >
+                5 Anos
+              </button>
+              <DateRangePicker 
+                onApply={handleCustomPeriodSelect} 
+                isDark={isDark} 
+              />
+            </div>
+            
+            <div className="mt-2 sm:mt-0">
+              <button
+                onClick={() => setShowPortfolio(!showPortfolio)}
+                className={`px-4 py-2 rounded-md transition-colors ${
+                  showPortfolio
+                    ? isDark 
+                      ? 'bg-pink-600 text-white' 
+                      : 'bg-pink-600 text-white'
+                    : isDark 
+                      ? 'bg-gray-700 hover:bg-gray-600' 
+                      : 'bg-gray-100 hover:bg-gray-200'
+                }`}
+              >
+                {showPortfolio ? 'Ocultar Tenas Risk Parity' : 'Mostrar Tenas Risk Parity'}
+              </button>
+            </div>
+          </div>
 
           {timeSeriesData.length > 0 ? (
             <div className="h-96">
@@ -642,8 +601,6 @@ useEffect(() => {
                   
                   const returnValue = benchmarkReturns[benchmark.id];
                   const hasReturn = returnValue !== undefined && returnValue !== null;
-                  
-                
                   
                   const isPortfolio = benchmark.isPortfolio;
                   
