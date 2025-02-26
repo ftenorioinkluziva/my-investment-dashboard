@@ -58,14 +58,16 @@ async function syncHistoricalData(): Promise<void> {
     }
 
     // Data de início para dados históricos (5 anos atrás)
-    const startDate = new Date()
-    startDate.setFullYear(startDate.getFullYear() - 5)
-    const startTimestamp = startDate.getTime()
-    const endTimestamp = Date.now()
+
+    // Data de início para dados históricos (5 anos atrás)
+    const startTimestamp = Math.floor(Date.now() / 1000) - 5 * 365 * 24 * 60 * 60
+    // Data de fim para dados históricos (hoje)
+    const endTimestamp = Math.floor(Date.now() / 1000)
+    
 
     // Para cada ativo, buscar dados históricos
     for (const asset of assets) {
-      if (asset.id === 'CDI') {
+       if (asset.id === 'CDI') {
         // Tratar CDI
         try {
           const cdiData = await fetchCDIData()

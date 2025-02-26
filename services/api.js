@@ -10,7 +10,7 @@ async function getToken() {
   return authToken;
 }
 
-export async function fetchHistoricalData(symbol, resolution = 'D', period = '3Y') {
+export async function fetchHistoricalData(symbol, resolution = 'D', period = '5Y') {
   try {
     // Primeiro, tente obter os dados do banco local
     const localResponse = await fetch(`/api/historical?symbol=${symbol}&period=${period}`);
@@ -37,7 +37,7 @@ export async function fetchHistoricalData(symbol, resolution = 'D', period = '3Y
 async function fetchHistoricalDataFromAPI(symbol, resolution = 'D') {
   const token = await getToken();
   const now = Date.now();
-  const threeYearsAgo = now - (3 * 365 * 24 * 60 * 60 * 1000);
+  const threeYearsAgo = now - (5 * 365 * 24 * 60 * 60 * 1000);
 
   const payload = {
     symbol,
@@ -66,7 +66,7 @@ async function fetchHistoricalDataFromAPI(symbol, resolution = 'D') {
     }
 
     const data = await response.json();
-    console.log('Historical data for', symbol, ':', data);
+    //console.log('Historical data for', symbol, ':', data);
     return data;
   } catch (error) {
     console.error('Error fetching historical data from API:', error);
@@ -97,7 +97,11 @@ export async function fetchUSDData(startTimestamp, endTimestamp) {
     const period2 = Math.floor(endTimestamp / 1000);
     
     // Fazer requisição para nossa API local em vez do Yahoo Finance diretamente
-    const url = `/api/yahoo?symbol=USDBRL=X&interval=1d&period1=${period1}&period2=${period2}`;
+    //const url = `/api/yahoo?symbol=USDBRL=X&interval=1d&period1=${period1}&period2=${period2}`;
+    const url = `http://localhost:3000/api/yahoo?symbol=USDBRL=X&interval=1d&period1=${period1}&period2=${period2}`;
+//    const url = `http://localhost:3000/api/yahoo?symbol=USDBRL=X&interval=1d&period1=1577847600&period2=1740532985`;
+
+    console.log('Fetching USD data from URL:', url);
     
     const response = await fetch(url);
     
