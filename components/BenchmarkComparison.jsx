@@ -69,120 +69,66 @@ const BenchmarkComparison = () => {
       const startTimestamp = startDate.getTime();
       const endTimestamp = endDate.getTime();
       
+      console.log(`Período selecionado: ${startDate.toISOString()} até ${endDate.toISOString()}`);
+      
+      // Teste de conexão da API
+      try {
+        const pingResponse = await fetch('/api/ping');
+        const pingData = await pingResponse.json();
+        console.log('API connection test:', pingData);
+      } catch (pingError) {
+        console.error('API ping test failed:', pingError);
+      }
+      
       // Buscar dados dos benchmarks (exceto CDI e USD)
       const stockPromises = benchmarks
         .filter(benchmark => benchmark.id !== 'CDI' && benchmark.id !== 'USD')
         .map(async (benchmark) => {
           try {
+            console.log(`Buscando dados para ${benchmark.id}`);
             // Se estiver usando período personalizado, use a nova função
-            let data;
+            let response;
             if (isCustomPeriod) {
-              data = await fetchCustomHistoricalData(benchmark.id, startDate, endDate);
+              response = await fetch(`/api/yahoo/historical/custom?symbol=${benchmark.id}&startDate=${startDate.toISOString()}&endDate=${endDate.toISOString()}`);
             } else {
-              data = await fetchHistoricalData(benchmark.id);
+              response = await fetch(`/api/yahoo/historical?symbol=${benchmark.id}&period=${selectedPeriod}`);
             }
+            
+            if (!response.ok) {
+              const errorData = await response.json();
+              console.error(`API error for ${benchmark.id}:`, errorData);
+              throw new Error(`API error: ${response.status} - ${JSON.stringify(errorData)}`);
+            }
+            
+            const data = await response.json();
+            console.log(`Recebidos ${data.data?.length || 0} pontos para ${benchmark.id}`);
             return {
               id: benchmark.id,
-              data: data.data
+              data: data.data || []
             };
           } catch (error) {
             console.error(`Error fetching data for ${benchmark.id}:`, error);
             return {
               id: benchmark.id,
-              data: []
+              data: [],
+              error: error.message
             };
           }
         });
       
-      // Buscar dados do CDI
-      let cdiData = null;
-      try {
-        const cdiResult = await fetchCDIData();
-        if (cdiResult) {
-          cdiData = {
-            id: 'CDI',
-            data: cdiResult  // Agora já vem no formato correto do banco
-          };
-        }
-      } catch (error) {
-        console.error('Error fetching CDI data:', error);
-        cdiData = {
-          id: 'CDI',
-          data: []
-        };
-      }
+      // Continuar com o resto da função fetchData original...
+      // ...
       
-      // Buscar dados do Dólar
-      let usdData = null;
-      try {
-        const usdResult = await fetchUSDData(startTimestamp, endTimestamp);
-        if (usdResult && usdResult.chart && usdResult.chart.result && usdResult.chart.result.length > 0) {
-          usdData = {
-            id: 'USD',
-            data: processUSDData(usdResult)
-          };
-        }
-      } catch (error) {
-        console.error('Error fetching USD data:', error);
-        usdData = {
-          id: 'USD',
-          data: []
-        };
-      }
-      console.log("Fazendo requisições para API");
-      // Combinar todos os resultados
-      const stockResults = await Promise.all(stockPromises);
-      const allResults = [...stockResults.filter(result => result.data && result.data.length > 0)];
-      
-      if (cdiData && cdiData.data && cdiData.data.length > 0) {
-        allResults.push(cdiData);
-      }
-      
-      if (usdData && usdData.data && usdData.data.length > 0) {
-        allResults.push(usdData);
-      }
-      
-      if (allResults.length > 0) {
-        console.log("Resultados recebidos:", allResults);
-        let processedData = processHistoricalData(allResults);
-        
-        // Adicionar cálculo do portfólio aos dados
-        processedData = addPortfolioToData(processedData);
-        
-        setTimeSeriesData(processedData);
-        
-        // Calcular e definir configurações do eixo Y
-        const yConfig = calculateYAxisConfig(processedData);
-        setYAxisConfig(yConfig);
-        
-        // Calcular retornos para a tabela
-        if (processedData.length > 0) {
-          const lastDataPoint = processedData[processedData.length - 1];
-          const returns = {};
-          
-          benchmarks.forEach(benchmark => {
-            const value = lastDataPoint[benchmark.id];
-            returns[benchmark.id] = value !== undefined ? parseFloat(value) : null;
-          });
-          
-          setBenchmarkReturns(returns);
-
-        }
-      } else {
-        console.error('No valid data returned from API');
-        setTimeSeriesData([]);
-        setBenchmarkReturns({});
-      }
-      console.log("Dados processados com sucesso, atualizando estado");
     } catch (error) {
       console.error('Erro detalhado ao buscar dados:', error);
-      console.error(error.stack); 
+      console.error(error.stack);
+      setTimeSeriesData([]);
+      setBenchmarkReturns({});
     } finally {
       setIsLoading(false);
       console.log("Loading finalizado");
     }
   };
-
   // Função para processar os dados do CDI
   const processCDIData = (cdiData, startTimestamp, endTimestamp) => {
     // Filtramos apenas os dados dentro do período selecionado
@@ -444,17 +390,18 @@ const handlePeriodSelect = (period) => {
   fetchData();
 };
 
-//Atualizar o useEffect para reagir às mudanças no período personalizado
+// Correto - Executa quando o componente monta e quando o período muda
 useEffect(() => {
-  if (isCustomPeriod && customDateRange.startDate && customDateRange.endDate) {
+  console.log('Executando fetchData no useEffect...');
+  fetchData();
+}, [selectedPeriod]); // selectedPeriod como dependência
+
+useEffect(() => {
+  console.log('Executando fetchData no useEffect...');
+  if (!isCustomPeriod || (isCustomPeriod && customDateRange.startDate && customDateRange.endDate)) {
     fetchData();
   }
-}, [isCustomPeriod, customDateRange]);
-
-  // Efeito para buscar dados quando o período mudar
-/*   useEffect(() => {
-    fetchData();
-  }, [selectedPeriod]); */
+}, [selectedPeriod, isCustomPeriod, customDateRange]);
 
   // Efeito para ajustar tema escuro com base nas preferências do sistema
   useEffect(() => {

@@ -10,7 +10,7 @@ export async function GET() {
     return NextResponse.json({ status: "OK", assets: count });
   } catch (error) {
     console.error("Erro na conexão com o banco:", error);
-    
+    // Verifique se o erro é uma instância de Error
     if (error instanceof Error) {
       return NextResponse.json({ status: "ERROR", message: error.message }, { status: 500 });
     } else {

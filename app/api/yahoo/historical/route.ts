@@ -1,3 +1,4 @@
+// app/api/yahoo/historical/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 
@@ -23,11 +24,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Asset not found' }, { status: 404 });
     }
 
+    console.log(`Ativo ${symbol} encontrado. Tipo: ${asset.type}`);
+
     // Calcular data de início com base no período
     const now = new Date();
     const yearsToSubtract = period === '1Y' ? 1 : period === '3Y' ? 3 : 5;
     const startDate = new Date();
     startDate.setFullYear(now.getFullYear() - yearsToSubtract);
+    
+    console.log(`Buscando preços desde ${startDate.toISOString()}`);
 
     // Buscar preços do banco
     const prices = await prisma.assetPrice.findMany({
@@ -42,6 +47,13 @@ export async function GET(request: NextRequest) {
       }
     });
 
+    console.log(`Encontrados ${prices.length} registros de preços para ${symbol}`);
+
+    if (prices.length === 0) {
+      console.log(`Nenhum preço encontrado para ${symbol} no período especificado`);
+      return NextResponse.json({ data: [] });
+    }
+
     // Converter para o formato esperado pelo frontend
     return NextResponse.json({
       data: prices.map(price => ({
@@ -52,8 +64,16 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error(`Error fetching historical data for ${symbol}:`, error);
+    // Retornar detalhes do erro para facilitar diagnóstico
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorStack = error instanceof Error ? error.stack : null;
+    
     return NextResponse.json(
-      { error: 'Failed to fetch historical data' },
+      { 
+        error: 'Failed to fetch historical data',
+        message: errorMessage,
+        stack: errorStack 
+      },
       { status: 500 }
     );
   }
