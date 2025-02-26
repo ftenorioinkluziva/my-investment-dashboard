@@ -13,6 +13,7 @@ const BenchmarkComparison = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [benchmarkReturns, setBenchmarkReturns] = useState({});
   const [showPortfolio, setShowPortfolio] = useState(true);
+
   const [isCustomPeriod, setIsCustomPeriod] = useState(false);
   const [customDateRange, setCustomDateRange] = useState({ startDate: null, endDate: null });
 
@@ -62,8 +63,8 @@ const BenchmarkComparison = () => {
         endDate = now;
       }
       
-     // const startTimestamp = startDate.getTime();
-     // const endTimestamp = endDate.getTime();
+      const startTimestamp = startDate.getTime();
+      const endTimestamp = endDate.getTime();
       
       console.log(`Período selecionado: ${startDate.toISOString()} até ${endDate.toISOString()}`);
       
@@ -98,9 +99,27 @@ const BenchmarkComparison = () => {
             
             const data = await response.json();
             console.log(`Recebidos ${data.data?.length || 0} pontos para ${benchmark.id}`);
+            
+            // Se não houver dados, retornar um array vazio
+            if (!data.data || data.data.length === 0) {
+              console.warn(`Nenhum ponto de dados para ${benchmark.id}. Pulando...`);
+              return {
+                id: benchmark.id,
+                data: []
+              };
+            }
+            
+            // Ajustar os dados para começar da data selecionada
+            let adjustedData = data.data;
+            if (!isCustomPeriod && selectedPeriod !== '5Y') {
+              // Filtrar dados para garantir que só temos dados a partir da data de início
+              adjustedData = data.data.filter(point => new Date(point.unixTime) >= startDate);
+              console.log(`Filtrados ${adjustedData.length} pontos para ${benchmark.id} após ${startDate.toISOString()}`);
+            }
+            
             return {
               id: benchmark.id,
-              data: data.data || []
+              data: adjustedData
             };
           } catch (error) {
             console.error(`Error fetching data for ${benchmark.id}:`, error);
@@ -114,11 +133,29 @@ const BenchmarkComparison = () => {
       
       // Esperar todas as requisições terminarem
       const stockResults = await Promise.all(stockPromises);
-      console.log("Todos os dados recebidos, resultados:", stockResults);
+      console.log("Todos os dados recebidos, resultados:", stockResults.map(r => `${r.id}: ${r.data.length} pontos`));
+      
+      // Verificar se temos dados suficientes
+      const hasData = stockResults.some(result => result.data && result.data.length > 0);
+      if (!hasData) {
+        console.warn("Nenhum dado válido recebido das APIs");
+        setTimeSeriesData([]);
+        setBenchmarkReturns({});
+        setIsLoading(false);
+        return;
+      }
       
       // Processar dados históricos
       const processedData = processHistoricalData(stockResults);
-      console.log("Dados processados:", processedData);
+      console.log(`Dados processados: ${processedData.length} pontos`);
+      
+      if (processedData.length === 0) {
+        console.warn("Não foi possível processar os dados para exibição no gráfico");
+        setTimeSeriesData([]);
+        setBenchmarkReturns({});
+        setIsLoading(false);
+        return;
+      }
       
       // Adicionar portfólio se necessário
       const dataWithPortfolio = showPortfolio ? calculatePortfolioReturn(processedData) : processedData;
@@ -166,7 +203,29 @@ const BenchmarkComparison = () => {
       result.data.sort((a, b) => a.unixTime - b.unixTime);
     });
   
-    // Obter todas as datas únicas de todos os ativos
+    // Determinar a data de início (a mais recente entre todos os "primeiros pontos")
+    let startTimestamp = 0;
+    validResults.forEach(result => {
+      if (result.data.length > 0) {
+        // Encontrar a primeira data válida para este ativo
+        const firstValidPoint = result.data[0];
+        if (firstValidPoint && firstValidPoint.unixTime) {
+          // Atualizar startTimestamp se for a mais recente entre os primeiros pontos
+          if (startTimestamp === 0 || firstValidPoint.unixTime > startTimestamp) {
+            startTimestamp = firstValidPoint.unixTime;
+          }
+        }
+      }
+    });
+    
+    console.log(`Data de início comum para todos os ativos: ${new Date(startTimestamp).toISOString()}`);
+    
+    // Filtrar dados para apenas os pontos após a data de início
+    validResults.forEach(result => {
+      result.data = result.data.filter(point => point.unixTime >= startTimestamp);
+    });
+    
+    // Obter todas as datas únicas de todos os ativos após a data de início
     const allDates = new Set();
     validResults.forEach(result => {
       result.data.forEach(item => {
@@ -179,13 +238,18 @@ const BenchmarkComparison = () => {
     // Converter para array e ordenar
     const sortedDates = Array.from(allDates).sort((a, b) => a - b);
     
-    // Para cada ativo, encontre o preço inicial (mais antigo)
+    if (sortedDates.length === 0) {
+      console.warn('No dates available after filtering');
+      return [];
+    }
+    
+    // Para cada ativo, encontre o preço inicial (primeiro ponto após a data de início)
     const initialPrices = {};
     validResults.forEach(result => {
       if (result.data.length > 0) {
-        // Usar o primeiro preço como preço inicial
+        // O primeiro ponto já é garantido ser após a data de início comum
         initialPrices[result.id] = result.data[0].close;
-        console.log(`Initial price for ${result.id}: ${initialPrices[result.id]}`);
+        console.log(`Initial price for ${result.id}: ${initialPrices[result.id]} at ${new Date(result.data[0].unixTime).toISOString()}`);
       }
     });
   
@@ -199,6 +263,7 @@ const BenchmarkComparison = () => {
       // Para cada benchmark, calcular o retorno percentual em relação ao preço inicial
       validResults.forEach(result => {
         if (initialPrices[result.id]) {
+          
           // Encontrar o preço mais próximo para esta data
           const closestDataPoint = findClosestDataPoint(result.data, date);
           
@@ -357,13 +422,23 @@ const BenchmarkComparison = () => {
     setIsCustomPeriod(false);
   };
 
-  // Executa quando o componente monta e quando o período muda
+  // Executa quando o componente monta e quando o período ou outras configurações mudam
   useEffect(() => {
     console.log('Executando fetchData no useEffect...');
     if (!isCustomPeriod || (isCustomPeriod && customDateRange.startDate && customDateRange.endDate)) {
       fetchData();
     }
   }, [selectedPeriod, isCustomPeriod, customDateRange, showPortfolio]);
+  
+  // Efeito para atualizar o gráfico quando mudar o tema escuro (cores)
+  useEffect(() => {
+    if (timeSeriesData.length > 0) {
+      // Apenas atualize o gráfico reorganizando os dados (sem buscar novamente)
+      const updatedData = [...timeSeriesData];
+      setTimeSeriesData([]);
+      setTimeout(() => setTimeSeriesData(updatedData), 10);
+    }
+  }, [isDark]);
 
   // Efeito para ajustar tema escuro com base nas preferências do sistema
   useEffect(() => {
