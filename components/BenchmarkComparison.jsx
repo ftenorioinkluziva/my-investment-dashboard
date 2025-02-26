@@ -42,7 +42,7 @@ const BenchmarkComparison = () => {
     { id: 'FIXA11', name: 'FIXA11 (Pré)', color: isDark ? '#FB923C' : '#FF9800' },
     { id: 'CDI', name: 'CDI', color: isDark ? '#94A3B8' : '#607D8B' },
     { id: 'USD', name: 'USD/BRL (Dólar)', color: isDark ? '#D1D5DB' : '#333333' },
-    { id: 'PORTFOLIO', name: 'Tenas Risk Parity', color: isDark ? '#EC4899' : '#E91E63', isPortfolio: true }
+   // { id: 'PORTFOLIO', name: 'Tenas Risk Parity', color: isDark ? '#EC4899' : '#E91E63', isPortfolio: true }
   ];
 
   const fetchData = async () => {
