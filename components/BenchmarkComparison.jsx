@@ -100,7 +100,7 @@ const BenchmarkComparison = () => {
         if (cdiResult) {
           cdiData = {
             id: 'CDI',
-            data: processCDIData(cdiResult, startTimestamp, endTimestamp)
+            data: cdiResult  // Agora já vem no formato correto do banco
           };
         }
       } catch (error) {

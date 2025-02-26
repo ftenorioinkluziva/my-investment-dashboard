@@ -1,38 +1,32 @@
-import { login } from './auth';
+//import { login } from './auth';
 
-const API_URL = 'https://svc.aebroadcast.com.br/stock/v1';
-let authToken = null;
+//const API_URL = 'https://svc.aebroadcast.com.br/stock/v1';
+//let authToken = null;
 
-async function getToken() {
+/* async function getToken() {
   if (!authToken) {
     authToken = await login();
   }
   return authToken;
-}
+} */
 
-export async function fetchHistoricalData(symbol, resolution = 'D', period = '5Y') {
-  try {
-    // Primeiro, tente obter os dados do banco local
-    const localResponse = await fetch(`/api/historical?symbol=${symbol}&period=${period}`);
-    
-    if (localResponse.ok) {
-      const data = await localResponse.json();
-      if (data && data.data && data.data.length > 0) {
-        console.log(`Fetched ${symbol} data from local database`);
-        return data;
+  export async function fetchHistoricalData(symbol, period = '5Y') {
+    try {
+      // Buscar somente do banco de dados
+      const response = await fetch(`/api/yahoo/historical?symbol=${symbol}&period=${period}`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
+      
+      const data = await response.json();
+      console.log(`Fetched ${symbol} data from database`);
+      return data;
+    } catch (error) {
+      console.error('Error fetching historical data:', error);
+      throw error;
     }
-    
-    // Se não conseguir do banco local, busque da API externa
-    console.log(`Fetching ${symbol} data from external API`);
-    return fetchHistoricalDataFromAPI(symbol, resolution);
-  } catch (error) {
-    console.error('Error fetching historical data:', error);
-    // Se falhar, tente a API externa
-    return fetchHistoricalDataFromAPI(symbol, resolution);
   }
-}
-
 // Função para buscar dados históricos com intervalo personalizado
 export async function fetchCustomHistoricalData(symbol, startDate, endDate) {
   try {
@@ -51,7 +45,7 @@ export async function fetchCustomHistoricalData(symbol, startDate, endDate) {
     }
     
     // Fazer requisição para a API local
-    const response = await fetch(`/api/historical/custom?symbol=${symbol}&startDate=${formattedStartDate}&endDate=${formattedEndDate}`);
+    const response = await fetch(`/api/yahoo/historical/custom?symbol=${symbol}&startDate=${formattedStartDate}&endDate=${formattedEndDate}`);
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
@@ -66,7 +60,7 @@ export async function fetchCustomHistoricalData(symbol, startDate, endDate) {
   }
 }
 
-// Função original, renomeada
+/* // Função original, renomeada
 async function fetchHistoricalDataFromAPI(symbol, resolution = 'D') {
   const token = await getToken();
   const now = Date.now();
@@ -104,18 +98,19 @@ async function fetchHistoricalDataFromAPI(symbol, resolution = 'D') {
     console.error('Error fetching historical data from API:', error);
     throw error;
   }
-}
+} */
 
+// Funções para CDI e USD que também usam apenas o banco de dados
 export async function fetchCDIData() {
   try {
-    const response = await fetch('https://api.bcb.gov.br/dados/serie/bcdata.sgs.12/dados?formato=json');
+    const response = await fetch('/api/yahoo/historical?symbol=CDI&period=5Y');
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     
     const data = await response.json();
-    return data;
+    return data.data; // Retorna diretamente os dados
   } catch (error) {
     console.error('Error fetching CDI data:', error);
     throw error;
@@ -124,23 +119,29 @@ export async function fetchCDIData() {
 
 export async function fetchUSDData(startTimestamp, endTimestamp) {
   try {
-    // Converter timestamps para segundos (formato esperado pelo Yahoo Finance)
-    const period1 = Math.floor(startTimestamp / 1000);
-    const period2 = Math.floor(endTimestamp / 1000);
     
-    // Fazer requisição para nossa API local em vez do Yahoo Finance diretamente
-    const url = `/api/yahoo?symbol=USDBRL=X&interval=1d&period1=${period1}&period2=${period2}`;
-    
-    console.log('Fetching USD data from URL:', url);
-    
-    const response = await fetch(url);
+    // Buscar do banco de dados
+    const response = await fetch(`/api/yahoo/historical/custom?symbol=USD&startDate=${new Date(startTimestamp).toISOString()}&endDate=${new Date(endTimestamp).toISOString()}`);
     
     if (!response.ok) {
       throw new Error(`API responded with status: ${response.status}`);
     }
     
     const data = await response.json();
-    return data;
+    
+    // Formatar para o componente esperar o mesmo formato de retorno
+    return {
+      chart: {
+        result: [{
+          timestamp: data.data.map(item => Math.floor(item.unixTime/1000)),
+          indicators: {
+            quote: [{
+              close: data.data.map(item => item.close)
+            }]
+          }
+        }]
+      }
+    };
   } catch (error) {
     console.error('Error fetching USD/BRL data:', error);
     throw error;
