@@ -127,7 +127,6 @@ const BenchmarkComparison = () => {
     }
   };
 
-  // Processamento de dados históricos para o gráfico
   const processHistoricalData = (results) => {
     if (!results || results.length === 0) return [];
     
@@ -176,36 +175,74 @@ const BenchmarkComparison = () => {
     
     if (sortedDates.length === 0) return [];
     
-    // Preços iniciais para cálculo de retorno
-    const initialPrices = {};
+    // Calcular retornos acumulados para cada ativo
+    const accumulatedReturns = {};
+    
     validResults.forEach(result => {
-      if (result.data.length > 0) {
-        initialPrices[result.id] = result.data[0].close;
+      const assetId = result.id;
+      const assetData = result.data;
+      
+      // Inicializar acumulador para esse ativo
+      accumulatedReturns[assetId] = [];
+      
+      if (assetData.length < 2) return;
+      
+      // Tratamento especial para CDI
+      if (assetId === 'CDI') {
+        // Para CDI, usamos os valores diretamente
+        assetData.forEach((point, index) => {
+          accumulatedReturns[assetId].push({
+            timestamp: point.unixTime,
+            value: point.close
+          });
+        });
+      } else {
+        // Para outros ativos, calculamos o retorno acumulado
+        let cumulativeReturn = 0;
+        
+        assetData.forEach((point, index) => {
+          if (index === 0) {
+            // Primeiro ponto é a base (0% de retorno)
+            accumulatedReturns[assetId].push({
+              timestamp: point.unixTime,
+              value: 0
+            });
+          } else {
+            // Calcular retorno diário
+            const previousPoint = assetData[index - 1];
+            const dailyReturn = (point.close / previousPoint.close) - 1;
+            
+            // Acumular retorno
+            if (index === 1) {
+              cumulativeReturn = dailyReturn;
+            } else {
+              cumulativeReturn = (1 + cumulativeReturn) * (1 + dailyReturn) - 1;
+            }
+            
+            // Adicionar ponto com retorno acumulado em percentual
+            accumulatedReturns[assetId].push({
+              timestamp: point.unixTime,
+              value: cumulativeReturn * 100
+            });
+          }
+        });
       }
     });
     
-    // Criar pontos de dados formatados
+    // Criar pontos de dados formatados para o gráfico
     const dataPoints = sortedDates.map(date => {
       const dataPoint = {
         date: new Date(date).toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }),
         timestamp: date
       };
       
-      validResults.forEach(result => {
-        if (initialPrices[result.id]) {
-          const closestPoint = findClosestDataPoint(result.data, date);
-          
-          if (closestPoint) {
-            const initialPrice = initialPrices[result.id];
-            
-            // Tratamento especial para CDI
-            if (result.id === 'CDI') {
-              dataPoint[result.id] = closestPoint.close;
-            } else {
-              const returnPercentage = ((closestPoint.close - initialPrice) / initialPrice) * 100;
-              dataPoint[result.id] = returnPercentage;
-            }
-          }
+      // Adicionar valores acumulados para cada ativo nesta data
+      Object.keys(accumulatedReturns).forEach(assetId => {
+        const assetReturns = accumulatedReturns[assetId];
+        const closestPoint = findClosestReturnPoint(assetReturns, date);
+        
+        if (closestPoint) {
+          dataPoint[assetId] = closestPoint.value;
         }
       });
       
@@ -216,19 +253,19 @@ const BenchmarkComparison = () => {
       Object.keys(point).some(key => key !== 'date' && key !== 'timestamp')
     );
   };
-
-  // Encontra o ponto de dados mais próximo para uma data
-  const findClosestDataPoint = (data, targetDate) => {
-    if (!data || data.length === 0) return null;
+  
+  // Função auxiliar para encontrar o ponto de retorno mais próximo de uma data
+  const findClosestReturnPoint = (returns, targetDate) => {
+    if (!returns || returns.length === 0) return null;
     
-    let closestPoint = data[0];
-    let closestDistance = Math.abs(data[0].unixTime - targetDate);
+    let closestPoint = returns[0];
+    let closestDistance = Math.abs(returns[0].timestamp - targetDate);
     
-    for (let i = 1; i < data.length; i++) {
-      const distance = Math.abs(data[i].unixTime - targetDate);
+    for (let i = 1; i < returns.length; i++) {
+      const distance = Math.abs(returns[i].timestamp - targetDate);
       if (distance < closestDistance) {
         closestDistance = distance;
-        closestPoint = data[i];
+        closestPoint = returns[i];
       }
     }
     
@@ -239,6 +276,8 @@ const BenchmarkComparison = () => {
     
     return closestPoint;
   };
+
+
 
   // Configuração do eixo Y
   const calculateYAxisConfig = (data) => {

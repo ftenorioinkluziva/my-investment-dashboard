@@ -72,56 +72,53 @@ export async function GET(request: NextRequest) {
             };
           }
 
-          // Get the first price after the start date
-          const firstPrice = await prisma.assetPrice.findFirst({
+          // Buscar todos os preços no período para cálculo do retorno acumulado
+          const prices = await prisma.assetPrice.findMany({
             where: {
               assetId: symbol,
               date: {
-                gte: start
-              }
-            },
-            orderBy: {
-              date: 'asc'
-            }
-          });
-
-          if (!firstPrice) {
-            return {
-              id: symbol,
-              error: 'No price data available at start date',
-              return: null
-            };
-          }
-
-          // Get the last price before the end date
-          const lastPrice = await prisma.assetPrice.findFirst({
-            where: {
-              assetId: symbol,
-              date: {
+                gte: start,
                 lte: end
               }
             },
             orderBy: {
-              date: 'desc'
+              date: 'asc'
+            },
+            select: {
+              price: true,
+              date: true
             }
           });
 
-          if (!lastPrice) {
+          if (prices.length === 0) {
             return {
               id: symbol,
-              error: 'No price data available at end date',
+              error: 'No price data available in selected period',
               return: null
             };
           }
 
-          // Calculate return percentage - with special handling for CDI
+          if (prices.length === 1) {
+            return {
+              id: symbol,
+              error: 'Need at least two data points to calculate return',
+              return: null,
+              firstDate: prices[0].date,
+              lastDate: prices[0].date,
+              firstPrice: prices[0].price,
+              lastPrice: prices[0].price
+            };
+          }
+
+          // Calcular retorno acumulado com tratamento especial para CDI
           let returnValue: number;
+          
           if (symbol === 'CDI') {
             // Para o CDI, usamos o valor diretamente, pois já representa um retorno acumulado
-            returnValue = lastPrice.price;
+            returnValue = prices[prices.length - 1].price;
           } else {
-            // Para outros ativos, calculamos o retorno percentual normal
-            returnValue = ((lastPrice.price - firstPrice.price) / firstPrice.price) * 100;
+            // Para outros ativos, calculamos o retorno acumulado correto
+            returnValue = calculateAccumulatedReturn(prices);
           }
 
           return {
@@ -129,10 +126,10 @@ export async function GET(request: NextRequest) {
             name: asset.name,
             type: asset.type,
             return: returnValue,
-            firstDate: firstPrice.date,
-            lastDate: lastPrice.date,
-            firstPrice: firstPrice.price,
-            lastPrice: lastPrice.price
+            firstDate: prices[0].date,
+            lastDate: prices[prices.length - 1].date,
+            firstPrice: prices[0].price,
+            lastPrice: prices[prices.length - 1].price
           };
         } catch (error) {
           console.error(`Error processing ${symbol}:`, error);
@@ -148,6 +145,7 @@ export async function GET(request: NextRequest) {
     // Filter out null values (from PORTFOLIO placeholder)
     const validResults = results.filter((result): result is AssetResult => result !== null);
     console.log('Results:', validResults);
+    
     // Calculate portfolio return if requested
     if (symbols.includes('PORTFOLIO')) {
       // Portfolio allocation
@@ -239,4 +237,28 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+// Função auxiliar para calcular o retorno acumulado
+function calculateAccumulatedReturn(prices: { price: number; date: Date }[]): number {
+  if (!prices || prices.length < 2) {
+    return 0;
+  }
+  
+  let accumulatedReturn = 0;
+  
+  for (let i = 1; i < prices.length; i++) {
+    const previousPrice = prices[i - 1].price;
+    const currentPrice = prices[i].price;
+    const dailyReturn = (currentPrice / previousPrice) - 1;
+    
+    // Acumular retorno (1 + dailyReturn1) * (1 + dailyReturn2) * ... - 1
+    if (i === 1) {
+      accumulatedReturn = dailyReturn;
+    } else {
+      accumulatedReturn = (1 + accumulatedReturn) * (1 + dailyReturn) - 1;
+    }
+  }
+  
+  return accumulatedReturn * 100; // Converter para percentual
 }
