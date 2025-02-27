@@ -36,7 +36,6 @@ const BenchmarkComparison = () => {
     { id: 'FIXA11', name: 'FIXA11 (Pré)', color: isDark ? '#FB923C' : '#FF9800' },
     { id: 'CDI', name: 'CDI', color: isDark ? '#94A3B8' : '#607D8B' },
     { id: 'USDBRL=X', name: 'USD/BRL (Dólar)', color: isDark ? '#D1D5DB' : '#333333' },
-    //{ id: 'PORTFOLIO', name: 'Tenas Risk Parity', color: isDark ? '#EC4899' : '#E91E63', isPortfolio: true }
   ];
 
   const fetchData = async () => {
@@ -137,14 +136,11 @@ const BenchmarkComparison = () => {
     
     if (validResults.length === 0) return [];
     
-  // Ordenar cada conjunto de dados por timestamp
+    // Ordenar cada conjunto de dados por timestamp
     validResults.forEach(result => {
       result.data.sort((a, b) => a.unixTime - b.unixTime);
     });
       
-
-
-    
     // Encontrar data de início comum
     let startTimestamp = 0;
     validResults.forEach(result => {
@@ -192,16 +188,30 @@ const BenchmarkComparison = () => {
       
       // Tratamento especial para CDI
       if (assetId === 'CDI') {
-        // Para CDI, usamos os valores diretamente
-        let cumulativeReturn = 0;
-
-
+        // CORREÇÃO: Para CDI, calcular o valor acumulado corretamente
+        let baseValue = 1.0; // Valor inicial (100%)
+        let previousValue = baseValue;
         
-        assetData.forEach((point) => {
-          accumulatedReturns[assetId].push({
-            timestamp: point.unixTime,
-            value: point.close
-          });
+        assetData.forEach((point, index) => {
+          if (index === 0) {
+            // Primeiro ponto é a base (0% de retorno)
+            accumulatedReturns[assetId].push({
+              timestamp: point.unixTime,
+              value: 0
+            });
+          } else {
+            // Calcular valor acumulado (o "point.close" já é o valor acumulado do CDI)
+            const dailyRate = point.close / 100; // Convertendo para decimal
+            const accumulatedValue = (1 + dailyRate) - 1; // Convertendo para percentual
+            
+            // Calcular retorno percentual desde o início
+            const percentReturn = ((accumulatedValue / baseValue) - 1) * 100;
+            
+            accumulatedReturns[assetId].push({
+              timestamp: point.unixTime,
+              value: percentReturn
+            });
+          }
         });
       } else {
         // Para outros ativos, calculamos o retorno acumulado
@@ -216,18 +226,17 @@ const BenchmarkComparison = () => {
             });
           } else {
             // Calcular retorno diário
-          // Calcular retorno diário
-          const previousPoint = assetData[index - 1];
-          const dailyReturn = ((point.close / previousPoint.close) - 1) * 100;
+            const previousPoint = assetData[index - 1];
+            const dailyReturn = ((point.close / previousPoint.close) - 1) * 100;
             
-          // Acumular retorno
-          cumulativeReturn += dailyReturn;
+            // Acumular retorno
+            cumulativeReturn += dailyReturn;
 
-          // Adicionar ponto com retorno acumulado
-          accumulatedReturns[assetId].push({
-            timestamp: point.unixTime,
-            value: cumulativeReturn
-          });
+            // Adicionar ponto com retorno acumulado
+            accumulatedReturns[assetId].push({
+              timestamp: point.unixTime,
+              value: cumulativeReturn
+            });
           }
         });
       }
@@ -280,8 +289,6 @@ const BenchmarkComparison = () => {
     
     return closestPoint;
   };
-
-
 
   // Configuração do eixo Y
   const calculateYAxisConfig = (data) => {
@@ -350,10 +357,15 @@ const BenchmarkComparison = () => {
       if (isCustomPeriod && customDateRange.startDate && customDateRange.endDate) {
         url += `startDate=${new Date(customDateRange.startDate).toISOString()}&endDate=${new Date(customDateRange.endDate).toISOString()}`;
       } else {
-        url += `period=${selectedPeriod}`;
+        const now = new Date();
+        const startDate = new Date();
+        const yearsToSubtract = selectedPeriod === '1Y' ? 1 : selectedPeriod === '3Y' ? 3 : 5;
+        startDate.setFullYear(now.getFullYear() - yearsToSubtract);
+        
+        url += `startDate=${startDate.toISOString()}&endDate=${now.toISOString()}`;
       }
       
-      const symbolList = benchmarks.map(b => b.id).join(',');
+      const symbolList = [...benchmarks.map(b => b.id), 'PORTFOLIO'].join(',');
       url += `&symbols=${symbolList}`;
       
       const response = await fetch(url);
@@ -621,7 +633,7 @@ const BenchmarkComparison = () => {
                     color: isDark ? '#FFFFFF' : '#000000'
                   }}
                 />
-                {benchmarks.map((benchmark) => {
+                {[...benchmarks, { id: 'PORTFOLIO', name: 'Tenas Risk Parity', color: isDark ? '#EC4899' : '#E91E63', isPortfolio: true }].map((benchmark) => {
                   // Pular o portfólio se estiver oculto
                   if (benchmark.isPortfolio && !showPortfolio) {
                     return null;
@@ -694,7 +706,7 @@ const BenchmarkComparison = () => {
               </tr>
             </thead>
             <tbody>
-              {benchmarks.map((benchmark) => {
+              {[...benchmarks, { id: 'PORTFOLIO', name: 'Tenas Risk Parity', color: isDark ? '#EC4899' : '#E91E63', isPortfolio: true }].map((benchmark) => {
                 // Se for o portfólio e estiver oculto, não mostrar na tabela
                 if (benchmark.isPortfolio && !showPortfolio) {
                   return null;
