@@ -240,29 +240,29 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// Função auxiliar para calcular o retorno acumulado padrão
 function calculateAccumulatedReturn(prices: { price: number; date: Date }[]): number {
-  if (!prices || prices.length < 2) {
-    return 0;
-  }
-  
-  // Calcula o retorno acumulado composto usando todos os pontos de preço
-  let accumulatedValue = 1.0; // Começamos com 1 (100%)
-  
-  for (let i = 1; i < prices.length; i++) {
-    const previousPrice = prices[i - 1].price;
-    const currentPrice = prices[i].price;
+    if (!prices || prices.length < 2) {
+      return 0;
+    }
     
-    // Calcula o retorno diário
-    const dailyReturn = (currentPrice / previousPrice) - 1;
+    // Ordenar preços por data em ordem crescente (do mais antigo para o mais recente)
+    const sortedPrices = prices.sort((a, b) => a.date.getTime() - b.date.getTime());
     
-    // Acumula o retorno (fórmula de retorno composto)
-    accumulatedValue *= (1 + dailyReturn);
+    let cumulativeReturn = 0;
+    
+    for (let i = 1; i < sortedPrices.length; i++) {
+      const previousPrice = sortedPrices[i - 1].price;
+      const currentPrice = sortedPrices[i].price;
+      
+      // Calcular retorno diário
+      const dailyReturn = ((currentPrice / previousPrice) - 1) * 100;
+      
+      // Acumular retornos
+      cumulativeReturn += dailyReturn;
+    }
+    
+    return cumulativeReturn;
   }
-  
-  // Converter para percentual e retornar
-  return (accumulatedValue - 1) * 100;
-}
 
 // NOVA FUNÇÃO: Cálculo específico para o CDI
 function calculateCDIAccumulatedReturn(prices: { price: number; date: Date }[]): number {
