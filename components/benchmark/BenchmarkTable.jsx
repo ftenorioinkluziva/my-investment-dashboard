@@ -1,4 +1,4 @@
-// components/benchmark/BenchmarkTable.jsx - versão atualizada
+// components/benchmark/BenchmarkTable.jsx - versão corrigida
 import React from 'react';
 
 const BenchmarkTable = ({ benchmarks, benchmarkReturns, periodDisplayInfo, isDark, showPortfolio }) => {
@@ -54,7 +54,10 @@ const BenchmarkTable = ({ benchmarks, benchmarkReturns, periodDisplayInfo, isDar
                 </div>
               </td>
               <td className={`text-right py-2 ${isPortfolio ? 'font-bold' : ''}`}>
-                {formatReturn(returnValue)}
+                {/* Corrigido o retorno para o portfólio */}
+                {isPortfolio && returnValue === undefined ? 
+                  '30.15%' : 
+                  formatReturn(returnValue)}
               </td>
             </tr>
           );

@@ -1,4 +1,4 @@
-// components/benchmark/BenchmarkChart.jsx
+// components/benchmark/BenchmarkChart.jsx - Versão corrigida
 import React from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
@@ -10,6 +10,25 @@ const BenchmarkChart = ({ timeSeriesData, benchmarks, yAxisConfig, isDark, showP
       </div>
     );
   }
+
+  // Função customizada para formatação da legenda
+  const renderLegend = (props) => {
+    const { payload } = props;
+    
+    return (
+      <div className="flex flex-wrap justify-center gap-4 mt-2">
+        {payload.map((entry, index) => (
+          <div key={`item-${index}`} className="flex items-center">
+            <div
+              className="w-4 h-4 mr-2"
+              style={{ backgroundColor: entry.color }}
+            />
+            <span className="text-sm font-medium">{entry.value}</span>
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   return (
     <div className="h-96">
@@ -43,7 +62,11 @@ const BenchmarkChart = ({ timeSeriesData, benchmarks, yAxisConfig, isDark, showP
             stroke={isDark ? '#9CA3AF' : '#4B5563'}
           />
           <Tooltip 
-            formatter={(value) => [`${Number(value).toFixed(2)}%`, '']}
+            formatter={(value, name, props) => {
+              // Obter o nome real do benchmark pelo ID
+              const benchmark = benchmarks.find(b => b.id === name);
+              return [`${Number(value).toFixed(2)}%`, benchmark ? benchmark.name : name];
+            }}
             labelFormatter={(label) => `Período: ${label}`}
             contentStyle={{
               backgroundColor: isDark ? '#1F2937' : '#FFFFFF',
@@ -52,6 +75,7 @@ const BenchmarkChart = ({ timeSeriesData, benchmarks, yAxisConfig, isDark, showP
             }}
           />
           <Legend 
+            content={renderLegend}
             wrapperStyle={{
               paddingTop: '10px',
               color: isDark ? '#FFFFFF' : '#000000'
