@@ -1,6 +1,24 @@
 // app/api/benchmark/returns/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { AssetType } from '@prisma/client';
+
+// Interface de resultado para tipagem forte
+interface AssetResult {
+  id: string;
+  name?: string;
+  type?: AssetType;
+  error?: string;
+  return: number | null;
+  firstDate?: Date;
+  lastDate?: Date;
+  firstPrice?: number;
+  lastPrice?: number;
+  warning?: string;
+  components?: string[];
+  weights?: Record<string, number>;
+  availableWeight?: number;
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -45,8 +63,13 @@ export async function GET(request: NextRequest) {
 
     // Get the results for each symbol
     const results = await Promise.all(
-      symbols.map(async (symbol) => {
+      symbols.map(async (symbol): Promise<AssetResult | null> => {
         try {
+          // Ignore PORTFOLIO symbol - will be calculated separately
+          if (symbol === 'PORTFOLIO') {
+            return null;
+          }
+
           // Verify asset exists
           const asset = await prisma.asset.findUnique({
             where: { id: symbol }
@@ -102,14 +125,13 @@ export async function GET(request: NextRequest) {
             };
           }
 
+          // Calculate return percentage - with special handling for CDI
           let returnValue: number;
-
-          // Special handling for CDI, which is already in percentage terms
           if (symbol === 'CDI') {
             // Para o CDI, usamos o valor diretamente, pois já representa um retorno acumulado
             returnValue = lastPrice.price;
           } else {
-            // Calculate return percentage for other assets
+            // Para outros ativos, calculamos o retorno percentual normal
             returnValue = ((lastPrice.price - firstPrice.price) / firstPrice.price) * 100;
           }
 
@@ -134,10 +156,13 @@ export async function GET(request: NextRequest) {
       })
     );
 
+    // Filter out null values (from PORTFOLIO placeholder)
+    const validResults = results.filter((result): result is AssetResult => result !== null);
+
     // Calculate portfolio return if requested
     if (symbols.includes('PORTFOLIO')) {
       // Portfolio allocation
-      const portfolio = {
+      const portfolio: Record<string, number> = {
         'BOVA11': 0.05,  // 5%
         'XFIX11': 0.14,  // 14%
         'IB5M11': 0.08,  // 8%
@@ -148,20 +173,25 @@ export async function GET(request: NextRequest) {
       };
 
       // Get all returns from individual assets
-      const assetReturns = new Map();
-      results.forEach(result => {
-        if (result.id !== 'PORTFOLIO' && result.return !== null) {
+      const assetReturns = new Map<string, number>();
+      validResults.forEach(result => {
+        if (result.return !== null) {
           assetReturns.set(result.id, result.return);
         }
       });
 
       // Calculate weighted portfolio return
       let portfolioReturn = 0;
-      let missingComponents = [];
+      const missingComponents: string[] = [];
+      let totalWeightApplied = 0;
 
       Object.entries(portfolio).forEach(([assetId, weight]) => {
         if (assetReturns.has(assetId)) {
-          portfolioReturn += assetReturns.get(assetId) * weight;
+          const assetReturn = assetReturns.get(assetId);
+          if (assetReturn !== undefined) {
+            portfolioReturn += assetReturn * weight;
+            totalWeightApplied += weight;
+          }
         } else {
           missingComponents.push(assetId);
         }
@@ -169,17 +199,33 @@ export async function GET(request: NextRequest) {
 
       // Add portfolio to results
       if (missingComponents.length === 0) {
-        results.push({
+        validResults.push({
           id: 'PORTFOLIO',
           name: 'Tenas Risk Parity',
-          type: 'ETF',
+          type: 'ETF', // Usando um tipo válido do enum AssetType
           return: portfolioReturn,
-          components: Object.keys(portfolio)
+          components: Object.keys(portfolio),
+          weights: portfolio
+        });
+      } else if (totalWeightApplied > 0) {
+        // Partial portfolio calculation (normalize by available weight)
+        const normalizedReturn = portfolioReturn / totalWeightApplied * 100;
+        validResults.push({
+          id: 'PORTFOLIO',
+          name: 'Tenas Risk Parity (Partial)',
+          type: 'ETF', // Usando um tipo válido do enum AssetType
+          return: normalizedReturn,
+          warning: `Missing components: ${missingComponents.join(', ')}`,
+          availableWeight: totalWeightApplied,
+          components: Object.keys(portfolio).filter(id => !missingComponents.includes(id)),
+          weights: portfolio
         });
       } else {
-        results.push({
+        validResults.push({
           id: 'PORTFOLIO',
-          error: `Missing components: ${missingComponents.join(', ')}`,
+          name: 'Tenas Risk Parity',
+          type: 'ETF', // Usando um tipo válido do enum AssetType
+          error: `Missing all components: ${missingComponents.join(', ')}`,
           return: null
         });
       }
@@ -188,16 +234,18 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       startDate: start,
       endDate: end,
-      results: results
+      results: validResults
     });
   } catch (error) {
     console.error('Error calculating benchmark returns:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorStack = error instanceof Error ? error.stack : null;
     
     return NextResponse.json(
       { 
         error: 'Failed to calculate benchmark returns',
-        message: errorMessage
+        message: errorMessage,
+        stack: process.env.NODE_ENV !== 'production' ? errorStack : undefined
       },
       { status: 500 }
     );

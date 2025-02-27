@@ -142,13 +142,12 @@ const BenchmarkComparison = () => {
       // Calcular configuração do eixo Y
       const calculatedYAxisConfig = calculateYAxisConfig(dataWithPortfolio);
       
-      // Calcular retornos para exibição na tabela
-      const calculatedReturns = calculateBenchmarkReturns(dataWithPortfolio);
+    
       
       // Atualizar estado
       setTimeSeriesData(dataWithPortfolio);
       setYAxisConfig(calculatedYAxisConfig);
-      setBenchmarkReturns(calculatedReturns);
+      
     } catch (error) {
       console.error('Erro detalhado ao buscar dados:', error);
       console.error(error.stack);
@@ -365,27 +364,62 @@ const BenchmarkComparison = () => {
     });
   };
   
-  // Função para calcular os retornos para exibição na tabela
-  const calculateBenchmarkReturns = (data) => {
-    console.log("Calculando retornos para exibição na tabela...");
-    console.log(data);
-    if (!data || data.length === 0) {
+ // Função para calcular os retornos para exibição na tabela
+const calculateBenchmarkReturns = async () => {
+  console.log("Buscando retornos através da API...");
+  
+  try {
+    // Construir a URL com os parâmetros corretos
+    let url = '/api/benchmark/returns?';
+    
+    // Adicionar parâmetros de data ou período
+    if (isCustomPeriod && customDateRange.startDate && customDateRange.endDate) {
+      url += `startDate=${new Date(customDateRange.startDate).toISOString()}&endDate=${new Date(customDateRange.endDate).toISOString()}`;
+    } else {
+      url += `period=${selectedPeriod}`;
+    }
+    
+    // Adicionar lista de símbolos que queremos os retornos
+    const symbolList = benchmarks.map(b => b.id).join(',');
+    url += `&symbols=${symbolList}`;
+    
+    console.log(`Chamando API: ${url}`);
+    
+    // Fazer a requisição para a API
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('Erro ao obter retornos:', errorData);
+      throw new Error(`API error: ${response.status} - ${JSON.stringify(errorData)}`);
+    }
+    
+    // Processar resposta
+    const data = await response.json();
+    console.log('Resposta da API de retornos:', data);
+    
+    // Verificar se temos resultados
+    if (!data.results || data.results.length === 0) {
+      console.warn('Nenhum dado de retorno disponível');
       return {};
     }
     
-    // Pegar o último ponto de dados (mais recente)
-    const lastDataPoint = data[data.length - 1];
-    
-    // Extrair os retornos de cada benchmark
+    // Transformar a resposta no formato esperado pelo componente
     const returns = {};
-    benchmarks.forEach(benchmark => {
-      if (lastDataPoint[benchmark.id] !== undefined) {
-        returns[benchmark.id] = lastDataPoint[benchmark.id];
+    data.results.forEach(result => {
+      if (result.return !== null) {
+        returns[result.id] = result.return;
       }
     });
-    console.log(returns);
+    
+    console.log('Retornos calculados:', returns);
     return returns;
-  };
+  } catch (error) {
+    console.error('Erro ao calcular retornos dos benchmarks:', error);
+    // Retornar objeto vazio em caso de erro
+    return {};
+  }
+};
 
   // Handler para quando um período personalizado é selecionado
   const handleCustomPeriodSelect = (startDate, endDate) => {
@@ -401,11 +435,23 @@ const BenchmarkComparison = () => {
     setIsCustomPeriod(false);
   };
 
+  // Função para calcular o retorno do portfólio
+  const fetchBenchmarkReturns = async () => {
+    try {
+      const calculatedReturns = await calculateBenchmarkReturns();
+      setBenchmarkReturns(calculatedReturns);
+    } catch (error) {
+      console.error('Erro ao buscar retornos dos benchmarks:', error);
+      setBenchmarkReturns({});
+    }
+  };
+
   // Executa quando o componente monta e quando o período ou outras configurações mudam
   useEffect(() => {
    
     if (!isCustomPeriod || (isCustomPeriod && customDateRange.startDate && customDateRange.endDate)) {
       fetchData();
+      fetchBenchmarkReturns();
     }
   }, [selectedPeriod, isCustomPeriod, customDateRange, showPortfolio]);
   
@@ -675,7 +721,11 @@ const BenchmarkComparison = () => {
                         </div>
                       </td>
                       <td className={`text-right py-2 ${isPortfolio ? 'font-bold' : ''}`}>
-                        {hasReturn ? `${returnValue.toFixed(2)}%` : '-'}
+                        {isLoading ? (
+                          <span className="text-gray-400">Carregando...</span>
+                        ) : (
+                          hasReturn ? `${returnValue.toFixed(2)}%` : '-'
+                        )}
                       </td>
                     </tr>
                   );
