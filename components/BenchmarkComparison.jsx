@@ -36,7 +36,7 @@ const BenchmarkComparison = () => {
     { id: 'FIXA11', name: 'FIXA11 (Pré)', color: isDark ? '#FB923C' : '#FF9800' },
     { id: 'CDI', name: 'CDI', color: isDark ? '#94A3B8' : '#607D8B' },
     { id: 'USDBRL=X', name: 'USD/BRL (Dólar)', color: isDark ? '#D1D5DB' : '#333333' },
-    { id: 'PORTFOLIO', name: 'Tenas Risk Parity', color: isDark ? '#EC4899' : '#E91E63', isPortfolio: true }
+    //{ id: 'PORTFOLIO', name: 'Tenas Risk Parity', color: isDark ? '#EC4899' : '#E91E63', isPortfolio: true }
   ];
 
   const fetchData = async () => {
@@ -137,10 +137,13 @@ const BenchmarkComparison = () => {
     
     if (validResults.length === 0) return [];
     
-    // Ordenar por data
+  // Ordenar cada conjunto de dados por timestamp
     validResults.forEach(result => {
       result.data.sort((a, b) => a.unixTime - b.unixTime);
     });
+      
+
+
     
     // Encontrar data de início comum
     let startTimestamp = 0;
@@ -190,7 +193,11 @@ const BenchmarkComparison = () => {
       // Tratamento especial para CDI
       if (assetId === 'CDI') {
         // Para CDI, usamos os valores diretamente
-        assetData.forEach((point, index) => {
+        let cumulativeReturn = 0;
+
+
+        
+        assetData.forEach((point) => {
           accumulatedReturns[assetId].push({
             timestamp: point.unixTime,
             value: point.close
@@ -209,21 +216,18 @@ const BenchmarkComparison = () => {
             });
           } else {
             // Calcular retorno diário
-            const previousPoint = assetData[index - 1];
-            const dailyReturn = (point.close / previousPoint.close) - 1;
+          // Calcular retorno diário
+          const previousPoint = assetData[index - 1];
+          const dailyReturn = ((point.close / previousPoint.close) - 1) * 100;
             
-            // Acumular retorno
-            if (index === 1) {
-              cumulativeReturn = dailyReturn;
-            } else {
-              cumulativeReturn = (1 + cumulativeReturn) * (1 + dailyReturn) - 1;
-            }
-            
-            // Adicionar ponto com retorno acumulado em percentual
-            accumulatedReturns[assetId].push({
-              timestamp: point.unixTime,
-              value: cumulativeReturn * 100
-            });
+          // Acumular retorno
+          cumulativeReturn += dailyReturn;
+
+          // Adicionar ponto com retorno acumulado
+          accumulatedReturns[assetId].push({
+            timestamp: point.unixTime,
+            value: cumulativeReturn
+          });
           }
         });
       }
