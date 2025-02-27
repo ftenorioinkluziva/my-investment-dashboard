@@ -69,7 +69,8 @@ export const processHistoricalData = (results) => {
       if (assetId === 'CDI') {
         // Para CDI, calcular o valor acumulado corretamente
         let baseValue = 1.0; // Valor inicial (100%)
-        
+        let accumulatedValue = 1.0; // Começamos com 1 (100%)
+
         assetData.forEach((point, index) => {
           if (index === 0) {
             // Primeiro ponto é a base (0% de retorno)
@@ -80,10 +81,10 @@ export const processHistoricalData = (results) => {
           } else {
             // Calcular valor acumulado (o "point.close" já é o valor acumulado do CDI)
             const dailyRate = point.close / 100; // Convertendo para decimal
-            const accumulatedValue = (1 + dailyRate) - 1; // Convertendo para percentual
+            accumulatedValue *= (1 + dailyRate); // Convertendo para percentual
             
             // Calcular retorno percentual desde o início
-            const percentReturn = ((accumulatedValue / baseValue) - 1) * 100;
+            const percentReturn = (accumulatedValue - 1) * 100;
             
             accumulatedReturns[assetId].push({
               timestamp: point.unixTime,
