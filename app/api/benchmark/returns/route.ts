@@ -145,6 +145,8 @@ export async function GET(request: NextRequest) {
 
     // Filter out null values (from PORTFOLIO placeholder)
     const validResults = results.filter((result): result is AssetResult => result !== null);
+
+
     console.log('Results:', validResults);
     
     // Calculate portfolio return if requested
@@ -162,24 +164,21 @@ export async function GET(request: NextRequest) {
 
       // Get all returns from individual assets
       const assetReturns = new Map<string, number>();
-      validResults.forEach(result => {
-        if (result.return !== null) {
-          assetReturns.set(result.id, result.return);
-        }
-      });
+
+    validResults.forEach(result => {
+      if (result.return !== null) {
+        result.return = validateReturnValue(result.return);
+      }
+    });
 
       // Calculate weighted portfolio return
-      let portfolioReturn = 0;
+      const portfolioReturn = calculateWeightedPortfolioReturn(assetReturns, portfolio);
       const missingComponents: string[] = [];
       let totalWeightApplied = 0;
 
       Object.entries(portfolio).forEach(([assetId, weight]) => {
         if (assetReturns.has(assetId)) {
-          const assetReturn = assetReturns.get(assetId);
-          if (assetReturn !== undefined) {
-            portfolioReturn += assetReturn * weight;
-            totalWeightApplied += weight;
-          }
+          totalWeightApplied += weight;
         } else {
           missingComponents.push(assetId);
         }
@@ -283,4 +282,45 @@ function calculateCDIAccumulatedReturn(prices: { price: number; date: Date }[]):
   
   // Converter para percentual e retornar
   return (accumulatedValue - 1) * 100;
-}
+  }
+
+function calculateWeightedPortfolioReturn(assetReturns: Map<string, number>, portfolio: Record<string, number>): number {
+    let portfolioReturn = 0;
+    let totalWeightApplied = 0;
+  
+    Object.entries(portfolio).forEach(([assetId, weight]) => {
+      if (assetReturns.has(assetId)) {
+        const assetReturn = assetReturns.get(assetId);
+        if (assetReturn !== undefined) {
+          portfolioReturn += assetReturn * weight;
+          totalWeightApplied += weight;
+        }
+      }
+    });
+  
+    // Se não conseguimos aplicar todo o peso, normalizamos o retorno
+    if (totalWeightApplied > 0 && totalWeightApplied < 1) {
+      // Normalizar o retorno para considerar apenas os ativos presentes
+      portfolioReturn = portfolioReturn / totalWeightApplied;
+    }
+  
+    return portfolioReturn;
+  }
+
+/**
+ * Verifica se um valor de retorno é válido e dentro de limites razoáveis
+ * @param value O valor de retorno a ser validado
+ * @param maxLimit Limite máximo aceitável (padrão: 300%)
+ * @returns O valor validado ou null se for inválido
+ */
+function validateReturnValue(value: number | null, maxLimit: number = 300): number | null {
+  if (value === null) return null;
+  
+  // Verificar se é um número e está dentro de limites razoáveis
+  if (isNaN(value) || !isFinite(value) || Math.abs(value) > maxLimit) {
+    console.warn(`Valor de retorno anormal detectado: ${value}. Será tratado como nulo.`);
+    return null;
+  }
+  
+  return value;
+}  

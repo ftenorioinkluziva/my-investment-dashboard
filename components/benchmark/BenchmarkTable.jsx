@@ -1,7 +1,21 @@
-// components/benchmark/BenchmarkTable.jsx
+// components/benchmark/BenchmarkTable.jsx - versão atualizada
 import React from 'react';
 
 const BenchmarkTable = ({ benchmarks, benchmarkReturns, periodDisplayInfo, isDark, showPortfolio }) => {
+  // Função para validar e formatar o retorno
+  const formatReturn = (value) => {
+    if (value === undefined || value === null) {
+      return '-';
+    }
+    
+    // Verificar se o valor é um número válido e não é um valor extremo
+    if (isNaN(value) || !isFinite(value) || Math.abs(value) > 1000) {
+      return 'Erro de cálculo';
+    }
+    
+    return `${value.toFixed(2)}%`;
+  };
+  
   return (
     <table className="w-full text-sm">
       <thead>
@@ -20,8 +34,6 @@ const BenchmarkTable = ({ benchmarks, benchmarkReturns, periodDisplayInfo, isDar
           }
           
           const returnValue = benchmarkReturns[benchmark.id];
-          const hasReturn = returnValue !== undefined && returnValue !== null;
-          
           const isPortfolio = benchmark.isPortfolio;
           
           return (
@@ -42,7 +54,7 @@ const BenchmarkTable = ({ benchmarks, benchmarkReturns, periodDisplayInfo, isDar
                 </div>
               </td>
               <td className={`text-right py-2 ${isPortfolio ? 'font-bold' : ''}`}>
-                {hasReturn ? `${returnValue.toFixed(2)}%` : '-'}
+                {formatReturn(returnValue)}
               </td>
             </tr>
           );

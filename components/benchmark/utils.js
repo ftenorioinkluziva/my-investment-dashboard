@@ -223,17 +223,29 @@ export const processHistoricalData = (results) => {
     return data.map(dataPoint => {
       const portfolioDataPoint = { ...dataPoint };
       
-      const hasAllComponents = Object.keys(allocation).every(assetId => 
-        dataPoint[assetId] !== undefined
+      // Verificar quais componentes do portfólio estão disponíveis neste ponto de dados
+      const availableComponents = Object.keys(allocation).filter(assetId => 
+        dataPoint[assetId] !== undefined && dataPoint[assetId] !== null
       );
       
-      if (hasAllComponents) {
+      // Se tivermos pelo menos alguns componentes, calcular o retorno ponderado
+      if (availableComponents.length > 0) {
         let portfolioReturn = 0;
+        let totalWeightApplied = 0;
         
-        Object.entries(allocation).forEach(([assetId, weight]) => {
-          const assetReturn = dataPoint[assetId] || 0;
+        // Calcular o retorno ponderado apenas com os componentes disponíveis
+        availableComponents.forEach(assetId => {
+          const weight = allocation[assetId];
+          const assetReturn = dataPoint[assetId];
+          
           portfolioReturn += assetReturn * weight;
+          totalWeightApplied += weight;
         });
+        
+        // Se não tivermos todos os componentes, normalizar o retorno
+        if (totalWeightApplied < 1 && totalWeightApplied > 0) {
+          portfolioReturn = portfolioReturn / totalWeightApplied;
+        }
         
         portfolioDataPoint['PORTFOLIO'] = portfolioReturn;
       }
@@ -241,3 +253,6 @@ export const processHistoricalData = (results) => {
       return portfolioDataPoint;
     });
   };
+
+
+  
