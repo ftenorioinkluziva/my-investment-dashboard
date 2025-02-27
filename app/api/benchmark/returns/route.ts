@@ -114,10 +114,11 @@ export async function GET(request: NextRequest) {
           let returnValue: number;
           
           if (symbol === 'CDI') {
-            // Para o CDI, usamos o valor diretamente, pois já representa um retorno acumulado
-            returnValue = prices[prices.length - 1].price;
+            // CORRIGIDO: Para o CDI, somamos todos os valores diários para obter o retorno acumulado
+            // Os valores já estão em percentual diário, então precisamos acumulá-los corretamente
+            returnValue = calculateCDIAccumulatedReturn(prices);
           } else {
-            // Para outros ativos, calculamos o retorno acumulado correto
+            // Para outros ativos, calculamos o retorno acumulado usando a fórmula padrão
             returnValue = calculateAccumulatedReturn(prices);
           }
 
@@ -239,26 +240,47 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// Função auxiliar para calcular o retorno acumulado
+// Função auxiliar para calcular o retorno acumulado padrão
 function calculateAccumulatedReturn(prices: { price: number; date: Date }[]): number {
   if (!prices || prices.length < 2) {
     return 0;
   }
   
-  let accumulatedReturn = 0;
+  // Calcula o retorno acumulado composto usando todos os pontos de preço
+  let accumulatedValue = 1.0; // Começamos com 1 (100%)
   
   for (let i = 1; i < prices.length; i++) {
     const previousPrice = prices[i - 1].price;
     const currentPrice = prices[i].price;
+    
+    // Calcula o retorno diário
     const dailyReturn = (currentPrice / previousPrice) - 1;
     
-    // Acumular retorno (1 + dailyReturn1) * (1 + dailyReturn2) * ... - 1
-    if (i === 1) {
-      accumulatedReturn = dailyReturn;
-    } else {
-      accumulatedReturn = (1 + accumulatedReturn) * (1 + dailyReturn) - 1;
-    }
+    // Acumula o retorno (fórmula de retorno composto)
+    accumulatedValue *= (1 + dailyReturn);
   }
   
-  return accumulatedReturn * 100; // Converter para percentual
+  // Converter para percentual e retornar
+  return (accumulatedValue - 1) * 100;
+}
+
+// NOVA FUNÇÃO: Cálculo específico para o CDI
+function calculateCDIAccumulatedReturn(prices: { price: number; date: Date }[]): number {
+  if (!prices || prices.length === 0) {
+    return 0;
+  }
+  
+  // Para o CDI, os valores diários são taxas percentuais
+  // Precisamos acumular usando juros compostos: (1 + r1) * (1 + r2) * ... * (1 + rn) - 1
+  let accumulatedValue = 1.0; // Começamos com 1 (100%)
+  
+  prices.forEach(price => {
+    // O valor do CDI está em percentual (ex: 0.05 para 0.05%)
+    // Convertemos para decimal para cálculo (ex: 0.0005 para 0.05%)
+    const dailyRate = price.price / 100;
+    accumulatedValue *= (1 + dailyRate);
+  });
+  
+  // Converter para percentual e retornar
+  return (accumulatedValue - 1) * 100;
 }
