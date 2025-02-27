@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { AssetType } from '@prisma/client';
 
-// Interface de resultado para tipagem forte
+// Interface para tipagem forte
 interface AssetResult {
   id: string;
   name?: string;
@@ -24,10 +24,10 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const startDate = searchParams.get('startDate');
   const endDate = searchParams.get('endDate');
-  const period = searchParams.get('period') || '1Y'; // Default to 1 year
+  //const period = searchParams.get('period') || '1Y'; // Default to 1 year
   const symbols = searchParams.get('symbols')?.split(',') || [];
 
-  if ((!startDate || !endDate) && !period) {
+  if (!startDate || !endDate) {
     return NextResponse.json(
       { error: 'Either startDate and endDate OR period must be provided' },
       { status: 400 }
@@ -42,19 +42,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    let start: Date;
-    let end: Date = new Date();
-
-    // Determine the date range based on parameters
-    if (startDate && endDate) {
-      start = new Date(startDate);
-      end = new Date(endDate);
-    } else {
-      // Calculate start date based on period
-      start = new Date();
-      const yearsToSubtract = period === '1Y' ? 1 : period === '3Y' ? 3 : 5;
-      start.setFullYear(start.getFullYear() - yearsToSubtract);
-    }
+    const start = new Date(startDate);
+    const end = new Date(endDate);
 
     // Validate dates
     if (isNaN(start.getTime()) || isNaN(end.getTime())) {
@@ -158,7 +147,7 @@ export async function GET(request: NextRequest) {
 
     // Filter out null values (from PORTFOLIO placeholder)
     const validResults = results.filter((result): result is AssetResult => result !== null);
-
+    console.log('Results:', validResults);
     // Calculate portfolio return if requested
     if (symbols.includes('PORTFOLIO')) {
       // Portfolio allocation

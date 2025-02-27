@@ -1,9 +1,7 @@
 "use client";
-
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Moon, Sun } from 'lucide-react';
-import DateRangePicker from './DateRangePicker';
 
 const BenchmarkComparison = () => {
   const [selectedPeriod, setSelectedPeriod] = useState('1Y');
@@ -13,9 +11,8 @@ const BenchmarkComparison = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [benchmarkReturns, setBenchmarkReturns] = useState({});
   const [showPortfolio, setShowPortfolio] = useState(true);
-
-  const [isCustomPeriod, setIsCustomPeriod] = useState(false);
   const [customDateRange, setCustomDateRange] = useState({ startDate: null, endDate: null });
+  const [isCustomPeriod, setIsCustomPeriod] = useState(false);
 
   // Portfólio Tenas Risk Parity
   const portfolio = {
@@ -26,7 +23,7 @@ const BenchmarkComparison = () => {
       'IB5M11': 0.08,  // 8%
       'CDI': 0.12,     // 12%
       'B5P211': 0.20,  // 20% (IMAB5)
-      'USD': 0.06,     // 6%
+      'USDBRL=X': 0.06,     // 6%
       'FIXA11': 0.35   // 35%
     }
   };
@@ -44,61 +41,45 @@ const BenchmarkComparison = () => {
 
   const fetchData = async () => {
     try {
- 
       setIsLoading(true);
       
-      // Definir o período para busca dos dados
+      // Definir período para busca dos dados
       let startDate, endDate;
       
       if (isCustomPeriod && customDateRange.startDate && customDateRange.endDate) {
         // Usar período personalizado
         startDate = new Date(customDateRange.startDate);
         endDate = new Date(customDateRange.endDate);
+      } else {
+        // Calcular o período com base na seleção
+        endDate = new Date();
+        startDate = new Date();
+        const yearsToSubtract = selectedPeriod === '1Y' ? 1 : selectedPeriod === '3Y' ? 3 : 5;
+        startDate.setFullYear(endDate.getFullYear() - yearsToSubtract);
       }
       
-      console.log(`Período selecionado: ${startDate.toISOString()} até ${endDate.toISOString()}`);
-      
-      
-      // Buscar dados dos benchmarks
+      // Buscar dados para cada benchmark
       const stockPromises = benchmarks
-        .filter(benchmark => !benchmark.isPortfolio) // Excluir o portfólio, que é calculado depois
+        .filter(benchmark => !benchmark.isPortfolio)
         .map(async (benchmark) => {
-          try {           
-            let response;            
+          try {
+            let response;
+            
             if (isCustomPeriod) {
               response = await fetch(`/api/yahoo/historical/custom?symbol=${benchmark.id}&startDate=${startDate.toISOString()}&endDate=${endDate.toISOString()}`);
+            } else {
+              response = await fetch(`/api/yahoo/historical?symbol=${benchmark.id}&period=${selectedPeriod}`);
             }
             
             if (!response.ok) {
-              const errorData = await response.json();
-              console.error(`API error for ${benchmark.id}:`, errorData);
-              throw new Error(`API error: ${response.status} - ${JSON.stringify(errorData)}`);
+              throw new Error(`API error: ${response.status}`);
             }
             
             const data = await response.json();
             
-            
-            // Se não houver dados, retornar um array vazio
-            if (!data.data || data.data.length === 0) {
-              console.warn(`Nenhum ponto de dados para ${benchmark.id}. Pulando...`);
-              return {
-                id: benchmark.id,
-                data: []
-              };
-            }
-            
-            // Ajustar os dados para começar da data selecionada
-            let adjustedData = data.data;
-            
-            if (!isCustomPeriod && selectedPeriod !== '5Y') {
-              // Filtrar dados para garantir que só temos dados a partir da data de início
-              adjustedData = data.data.filter(point => new Date(point.unixTime) >= startDate);
-             
-            }
-            
             return {
               id: benchmark.id,
-              data: adjustedData
+              data: data.data || []
             };
           } catch (error) {
             console.error(`Error fetching data for ${benchmark.id}:`, error);
@@ -110,14 +91,11 @@ const BenchmarkComparison = () => {
           }
         });
       
-      // Esperar todas as requisições terminarem
       const stockResults = await Promise.all(stockPromises);
-     
       
-      // Verificar se temos dados suficientes
+      // Verificar se temos dados
       const hasData = stockResults.some(result => result.data && result.data.length > 0);
       if (!hasData) {
-        console.warn("Nenhum dado válido recebido das APIs");
         setTimeSeriesData([]);
         setBenchmarkReturns({});
         setIsLoading(false);
@@ -126,15 +104,6 @@ const BenchmarkComparison = () => {
       
       // Processar dados históricos
       const processedData = processHistoricalData(stockResults);
-     
-      
-      if (processedData.length === 0) {
-        console.warn("Não foi possível processar os dados para exibição no gráfico");
-        setTimeSeriesData([]);
-        setBenchmarkReturns({});
-        setIsLoading(false);
-        return;
-      }
       
       // Adicionar portfólio se necessário
       const dataWithPortfolio = showPortfolio ? calculatePortfolioReturn(processedData) : processedData;
@@ -142,68 +111,57 @@ const BenchmarkComparison = () => {
       // Calcular configuração do eixo Y
       const calculatedYAxisConfig = calculateYAxisConfig(dataWithPortfolio);
       
-    
-      
       // Atualizar estado
       setTimeSeriesData(dataWithPortfolio);
       setYAxisConfig(calculatedYAxisConfig);
       
+      // Buscar retornos para a tabela
+      fetchBenchmarkReturns();
+      
     } catch (error) {
-      console.error('Erro detalhado ao buscar dados:', error);
-      console.error(error.stack);
+      console.error('Erro ao buscar dados:', error);
       setTimeSeriesData([]);
       setBenchmarkReturns({});
     } finally {
       setIsLoading(false);
-  
     }
   };
 
-  // Função para processar os dados históricos
+  // Processamento de dados históricos para o gráfico
   const processHistoricalData = (results) => {
-    if (!results || results.length === 0) {
-      console.warn('No data to process');
-      return [];
-    }
-  
-    // Filtrar resultados vazios
+    if (!results || results.length === 0) return [];
+    
+    // Filtrar resultados válidos
     const validResults = results.filter(result => 
       result && result.data && Array.isArray(result.data) && result.data.length > 0
     );
     
-    if (validResults.length === 0) {
-      console.warn('No valid data after filtering');
-      return [];
-    }
-  
-    // Ordenar todos os dados por data
+    if (validResults.length === 0) return [];
+    
+    // Ordenar por data
     validResults.forEach(result => {
       result.data.sort((a, b) => a.unixTime - b.unixTime);
     });
-  
-    // Determinar a data de início (a mais recente entre todos os "primeiros pontos")
+    
+    // Encontrar data de início comum
     let startTimestamp = 0;
     validResults.forEach(result => {
       if (result.data.length > 0) {
-        // Encontrar a primeira data válida para este ativo
-        const firstValidPoint = result.data[0];
-        if (firstValidPoint && firstValidPoint.unixTime) {
-          // Atualizar startTimestamp se for a mais recente entre os primeiros pontos
-          if (startTimestamp === 0 || firstValidPoint.unixTime > startTimestamp) {
-            startTimestamp = firstValidPoint.unixTime;
+        const firstPoint = result.data[0];
+        if (firstPoint && firstPoint.unixTime) {
+          if (startTimestamp === 0 || firstPoint.unixTime > startTimestamp) {
+            startTimestamp = firstPoint.unixTime;
           }
         }
       }
     });
     
-    console.log(`Data de início comum para todos os ativos: ${new Date(startTimestamp).toISOString()}`);
-    
-    // Filtrar dados para apenas os pontos após a data de início
+    // Filtrar dados após a data de início
     validResults.forEach(result => {
       result.data = result.data.filter(point => point.unixTime >= startTimestamp);
     });
     
-    // Obter todas as datas únicas de todos os ativos após a data de início
+    // Obter todas as datas únicas
     const allDates = new Set();
     validResults.forEach(result => {
       result.data.forEach(item => {
@@ -212,70 +170,54 @@ const BenchmarkComparison = () => {
         }
       });
     });
-  
-    // Converter para array e ordenar
+    
+    // Ordenar datas
     const sortedDates = Array.from(allDates).sort((a, b) => a - b);
     
-    if (sortedDates.length === 0) {
-      console.warn('No dates available after filtering');
-      return [];
-    }
+    if (sortedDates.length === 0) return [];
     
-    // Para cada ativo, encontre o preço inicial (primeiro ponto após a data de início)
+    // Preços iniciais para cálculo de retorno
     const initialPrices = {};
     validResults.forEach(result => {
       if (result.data.length > 0) {
-        // O primeiro ponto já é garantido ser após a data de início comum
         initialPrices[result.id] = result.data[0].close;
-     
       }
     });
-  
-    // Criar pontos de dados para cada data
+    
+    // Criar pontos de dados formatados
     const dataPoints = sortedDates.map(date => {
       const dataPoint = {
         date: new Date(date).toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }),
         timestamp: date
       };
-  
-      // Para cada benchmark, calcular o retorno percentual em relação ao preço inicial
+      
       validResults.forEach(result => {
         if (initialPrices[result.id]) {
+          const closestPoint = findClosestDataPoint(result.data, date);
           
-          // Encontrar o preço mais próximo para esta data
-          const closestDataPoint = findClosestDataPoint(result.data, date);
-          
-          if (closestDataPoint) {
+          if (closestPoint) {
             const initialPrice = initialPrices[result.id];
             
-            // Tratamento especial para CDI, que já está com retorno percentual            
+            // Tratamento especial para CDI
             if (result.id === 'CDI') {
-              // Se o ID do ativo é 'CDI', apenas acumular o retorno, pois já é um valor percentual
-              dataPoint[result.id] = (dataPoint[result.id] || 0) + closestDataPoint.close;
-
+              dataPoint[result.id] = closestPoint.close;
             } else {
-              // Para outros ativos, calculamos o retorno percentual normal
-              const returnPercentage = ((closestDataPoint.close - initialPrice) / initialPrice) * 100;
+              const returnPercentage = ((closestPoint.close - initialPrice) / initialPrice) * 100;
               dataPoint[result.id] = returnPercentage;
             }
           }
         }
       });
-
+      
       return dataPoint;
-
-    });
-  
-    // Filtrar pontos de dados incompletos
-    const filteredDataPoints = dataPoints.filter(point => {
-      // Verificar se o ponto tem pelo menos um benchmark além da data
-      return Object.keys(point).some(key => key !== 'date' && key !== 'timestamp');
     });
     
-    return filteredDataPoints;
+    return dataPoints.filter(point => 
+      Object.keys(point).some(key => key !== 'date' && key !== 'timestamp')
+    );
   };
 
-  // Função para encontrar o ponto de dados mais próximo para uma data
+  // Encontra o ponto de dados mais próximo para uma data
   const findClosestDataPoint = (data, targetDate) => {
     if (!data || data.length === 0) return null;
     
@@ -290,7 +232,7 @@ const BenchmarkComparison = () => {
       }
     }
     
-    // Se a diferença for maior que 7 dias, considere que não temos dados próximos o suficiente
+    // Limite de 7 dias para considerar válido
     if (closestDistance > 7 * 24 * 60 * 60 * 1000) {
       return null;
     }
@@ -298,13 +240,12 @@ const BenchmarkComparison = () => {
     return closestPoint;
   };
 
-  // Função para calcular a configuração do eixo Y
+  // Configuração do eixo Y
   const calculateYAxisConfig = (data) => {
     if (!data || data.length === 0) {
       return { min: -30, max: 30, ticks: [-30, -20, -10, 0, 10, 20, 30] };
     }
     
-    // Extrair todos os valores numéricos
     const allValues = [];
     data.forEach(entry => {
       Object.entries(entry).forEach(([key, value]) => {
@@ -321,13 +262,11 @@ const BenchmarkComparison = () => {
     const maxValue = Math.max(...allValues);
     const minValue = Math.min(...allValues);
     
-    // Adicionar margem
     const margin = Math.max(5, (maxValue - minValue) * 0.1);
-    const min = Math.floor((minValue - margin) / 10) * 10; // Arredondar para baixo para múltiplo de 10
-    const max = Math.ceil((maxValue + margin) / 10) * 10;  // Arredondar para cima para múltiplo de 10
+    const min = Math.floor((minValue - margin) / 10) * 10;
+    const max = Math.ceil((maxValue + margin) / 10) * 10;
     
-    // Criar ticks para o eixo Y
-    const step = (max - min) / 6; // Usar 7 ticks (incluindo min e max)
+    const step = (max - min) / 6;
     const ticks = [];
     for (let i = 0; i <= 6; i++) {
       ticks.push(min + (i * step));
@@ -336,19 +275,16 @@ const BenchmarkComparison = () => {
     return { min, max, ticks };
   };
 
-  // Função para calcular o retorno do portfólio
+  // Cálculo do retorno do portfólio
   const calculatePortfolioReturn = (data) => {
-    // Para cada ponto de dados, calcular o retorno ponderado do portfólio
     return data.map(dataPoint => {
       const portfolioDataPoint = { ...dataPoint };
       
-      // Verificar se temos dados suficientes para calcular o valor do portfólio
       const hasAllComponents = Object.keys(portfolio.allocation).every(assetId => 
         dataPoint[assetId] !== undefined
       );
       
       if (hasAllComponents) {
-        // Calcular o retorno ponderado do portfólio
         let portfolioReturn = 0;
         
         Object.entries(portfolio.allocation).forEach(([assetId, weight]) => {
@@ -356,116 +292,72 @@ const BenchmarkComparison = () => {
           portfolioReturn += assetReturn * weight;
         });
         
-        // Adicionar o retorno do portfólio aos dados
         portfolioDataPoint['PORTFOLIO'] = portfolioReturn;
       }
       
       return portfolioDataPoint;
     });
   };
-  
- // Função para calcular os retornos para exibição na tabela
-const calculateBenchmarkReturns = async () => {
-  console.log("Buscando retornos através da API...");
-  
-  try {
-    // Construir a URL com os parâmetros corretos
-    let url = '/api/benchmark/returns?';
-    
-    // Adicionar parâmetros de data ou período
-    if (isCustomPeriod && customDateRange.startDate && customDateRange.endDate) {
-      url += `startDate=${new Date(customDateRange.startDate).toISOString()}&endDate=${new Date(customDateRange.endDate).toISOString()}`;
-    } else {
-      url += `period=${selectedPeriod}`;
-    }
-    
-    // Adicionar lista de símbolos que queremos os retornos
-    const symbolList = benchmarks.map(b => b.id).join(',');
-    url += `&symbols=${symbolList}`;
-    
-    console.log(`Chamando API: ${url}`);
-    
-    // Fazer a requisição para a API
-    const response = await fetch(url);
-    
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error('Erro ao obter retornos:', errorData);
-      throw new Error(`API error: ${response.status} - ${JSON.stringify(errorData)}`);
-    }
-    
-    // Processar resposta
-    const data = await response.json();
-    console.log('Resposta da API de retornos:', data);
-    
-    // Verificar se temos resultados
-    if (!data.results || data.results.length === 0) {
-      console.warn('Nenhum dado de retorno disponível');
-      return {};
-    }
-    
-    // Transformar a resposta no formato esperado pelo componente
-    const returns = {};
-    data.results.forEach(result => {
-      if (result.return !== null) {
-        returns[result.id] = result.return;
-      }
-    });
-    
-    console.log('Retornos calculados:', returns);
-    return returns;
-  } catch (error) {
-    console.error('Erro ao calcular retornos dos benchmarks:', error);
-    // Retornar objeto vazio em caso de erro
-    return {};
-  }
-};
 
-  // Handler para quando um período personalizado é selecionado
-  const handleCustomPeriodSelect = (startDate, endDate) => {
-    setCustomDateRange({ startDate, endDate });
-    setIsCustomPeriod(true);
-    // Desmarcar os botões de período predefinido
-    setSelectedPeriod('custom');
+  // Busca retornos para exibição na tabela
+  const fetchBenchmarkReturns = async () => {
+    try {
+      let url = '/api/benchmark/returns?';
+      
+      if (isCustomPeriod && customDateRange.startDate && customDateRange.endDate) {
+        url += `startDate=${new Date(customDateRange.startDate).toISOString()}&endDate=${new Date(customDateRange.endDate).toISOString()}`;
+      } else {
+        url += `period=${selectedPeriod}`;
+      }
+      
+      const symbolList = benchmarks.map(b => b.id).join(',');
+      url += `&symbols=${symbolList}`;
+      
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      const returns = {};
+      if (data.results && data.results.length > 0) {
+        data.results.forEach(result => {
+          if (result.return !== null) {
+            returns[result.id] = result.return;
+          }
+        });
+      }
+      
+      setBenchmarkReturns(returns);
+    } catch (error) {
+      console.error('Erro ao buscar retornos:', error);
+      setBenchmarkReturns({});
+    }
   };
 
-  // Atualizar os handlers para botões de período
+  // Handler para seleção de período
   const handlePeriodSelect = (period) => {
     setSelectedPeriod(period);
     setIsCustomPeriod(false);
   };
 
-  // Função para calcular o retorno do portfólio
-  const fetchBenchmarkReturns = async () => {
-    try {
-      const calculatedReturns = await calculateBenchmarkReturns();
-      setBenchmarkReturns(calculatedReturns);
-    } catch (error) {
-      console.error('Erro ao buscar retornos dos benchmarks:', error);
-      setBenchmarkReturns({});
-    }
+  // Handler para período personalizado
+  const handleCustomPeriodSelect = (startDate, endDate) => {
+    setCustomDateRange({ startDate, endDate });
+    setIsCustomPeriod(true);
+    setSelectedPeriod('custom');
   };
 
-  // Executa quando o componente monta e quando o período ou outras configurações mudam
+  // Efeito para buscar dados quando o período muda
   useEffect(() => {
-   
     if (!isCustomPeriod || (isCustomPeriod && customDateRange.startDate && customDateRange.endDate)) {
       fetchData();
-      fetchBenchmarkReturns();
     }
   }, [selectedPeriod, isCustomPeriod, customDateRange, showPortfolio]);
   
-  // Efeito para atualizar o gráfico quando mudar o tema escuro (cores)
-  useEffect(() => {
-    if (timeSeriesData.length > 0) {
-      // Apenas atualize o gráfico reorganizando os dados (sem buscar novamente)
-      const updatedData = [...timeSeriesData];
-      setTimeSeriesData([]);
-      setTimeout(() => setTimeSeriesData(updatedData), 10);
-    }
-  }, [isDark]);
-
-  // Efeito para ajustar tema escuro com base nas preferências do sistema
+  // Efeito para verificar tema escuro do sistema
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -473,7 +365,93 @@ const calculateBenchmarkReturns = async () => {
     }
   }, []);
 
-  // Componente de carregamento
+  // Componente de DateRangePicker simplificado
+  const DateRangePicker = ({ onApply, isDark }) => {
+    const [localStartDate, setLocalStartDate] = useState('');
+    const [localEndDate, setLocalEndDate] = useState('');
+    const [showPicker, setShowPicker] = useState(false);
+    
+    const handleApply = () => {
+      if (localStartDate && localEndDate) {
+        onApply(localStartDate, localEndDate);
+        setShowPicker(false);
+      }
+    };
+  
+    return (
+      <div className="relative">
+        <button
+          onClick={() => setShowPicker(!showPicker)}
+          className={`px-4 py-2 rounded-md transition-colors ${
+            isDark 
+              ? 'bg-gray-700 hover:bg-gray-600 text-white' 
+              : 'bg-gray-100 hover:bg-gray-200 text-gray-800'
+          }`}
+        >
+          Período personalizado
+        </button>
+        
+        {showPicker && (
+          <div 
+            className={`absolute mt-2 p-4 rounded-md shadow-lg z-10 ${
+              isDark ? 'bg-gray-800 text-white' : 'bg-white text-gray-800'
+            }`}
+            style={{ width: '300px', right: 0 }}
+          >
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Data inicial</label>
+                <input
+                  type="date"
+                  value={localStartDate}
+                  onChange={(e) => setLocalStartDate(e.target.value)}
+                  className={`w-full px-3 py-2 rounded-md ${
+                    isDark ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-800'
+                  }`}
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium mb-1">Data final</label>
+                <input
+                  type="date"
+                  value={localEndDate}
+                  onChange={(e) => setLocalEndDate(e.target.value)}
+                  className={`w-full px-3 py-2 rounded-md ${
+                    isDark ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-800'
+                  }`}
+                />
+              </div>
+              
+              <div className="flex justify-between">
+                <button
+                  onClick={() => setShowPicker(false)}
+                  className={`px-4 py-2 rounded-md transition-colors ${
+                    isDark ? 'bg-gray-600 hover:bg-gray-500' : 'bg-gray-200 hover:bg-gray-300'
+                  }`}
+                >
+                  Cancelar
+                </button>
+                
+                <button
+                  onClick={handleApply}
+                  disabled={!localStartDate || !localEndDate}
+                  className={`px-4 py-2 rounded-md transition-colors ${
+                    !localStartDate || !localEndDate ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                  } ${
+                    isDark ? 'bg-blue-600 hover:bg-blue-500 text-white' : 'bg-blue-500 hover:bg-blue-400 text-white'
+                  }`}
+                >
+                  Aplicar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   if (isLoading) {
     return (
       <div className="w-full max-w-6xl p-4">
@@ -488,251 +466,227 @@ const calculateBenchmarkReturns = async () => {
 
   return (
     <div className={`w-full max-w-6xl p-4 ${isDark ? 'dark' : ''}`}>
-      <div className={`rounded-lg shadow-lg ${isDark ? 'bg-gray-800 text-white' : 'bg-white'}`}>
-        <div className="p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold">Evolução dos Benchmarks</h2>
+      <div className={`rounded-lg shadow-lg p-6 ${isDark ? 'bg-gray-800 text-white' : 'bg-white'}`}>
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold">Evolução dos Benchmarks</h2>
+          <button
+            onClick={() => setIsDark(!isDark)}
+            className={`p-2 rounded-full ${
+              isDark ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'
+            }`}
+            aria-label={isDark ? "Ativar modo claro" : "Ativar modo escuro"}
+          >
+            {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+          </button>
+        </div>
+        
+        <div className="flex flex-wrap justify-between mb-6">
+          <div className="flex flex-wrap gap-2">
             <button
-              onClick={() => setIsDark(!isDark)}
-              className={`p-2 rounded-full ${
-                isDark 
-                  ? 'bg-gray-700 hover:bg-gray-600' 
-                  : 'bg-gray-100 hover:bg-gray-200'
+              onClick={() => handlePeriodSelect('1Y')}
+              className={`px-4 py-2 rounded-md transition-colors ${
+                selectedPeriod === '1Y'
+                  ? isDark ? 'bg-blue-600 text-white' : 'bg-blue-600 text-white'
+                  : isDark ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'
               }`}
-              aria-label={isDark ? "Ativar modo claro" : "Ativar modo escuro"}
             >
-              {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+              1 Ano
             </button>
+            <button
+              onClick={() => handlePeriodSelect('3Y')}
+              className={`px-4 py-2 rounded-md transition-colors ${
+                selectedPeriod === '3Y'
+                  ? isDark ? 'bg-blue-600 text-white' : 'bg-blue-600 text-white'
+                  : isDark ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'
+              }`}
+            >
+              3 Anos
+            </button>
+            <button
+              onClick={() => handlePeriodSelect('5Y')}
+              className={`px-4 py-2 rounded-md transition-colors ${
+                selectedPeriod === '5Y'
+                  ? isDark ? 'bg-blue-600 text-white' : 'bg-blue-600 text-white'
+                  : isDark ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'
+              }`}
+            >
+              5 Anos
+            </button>
+            <DateRangePicker 
+              onApply={handleCustomPeriodSelect}
+              isDark={isDark}
+            />
           </div>
           
-          <div className="flex flex-wrap justify-between mb-6">
-            <div className="flex gap-2">
-              <button
-                onClick={() => handlePeriodSelect('1Y')}
-                className={`px-4 py-2 rounded-md transition-colors ${
-                  selectedPeriod === '1Y'
-                    ? isDark 
-                      ? 'bg-blue-600 text-white' 
-                      : 'bg-blue-600 text-white'
-                    : isDark 
-                      ? 'bg-gray-700 hover:bg-gray-600' 
-                      : 'bg-gray-100 hover:bg-gray-200'
-                }`}
-              >
-                1 Ano
-              </button>
-              <button
-                onClick={() => handlePeriodSelect('3Y')}
-                className={`px-4 py-2 rounded-md transition-colors ${
-                  selectedPeriod === '3Y'
-                    ? isDark 
-                      ? 'bg-blue-600 text-white' 
-                      : 'bg-blue-600 text-white'
-                    : isDark 
-                      ? 'bg-gray-700 hover:bg-gray-600' 
-                      : 'bg-gray-100 hover:bg-gray-200'
-                }`}
-              >
-                3 Anos
-              </button>
-              <button
-                onClick={() => handlePeriodSelect('5Y')}
-                className={`px-4 py-2 rounded-md transition-colors ${
-                  selectedPeriod === '5Y'
-                    ? isDark 
-                      ? 'bg-blue-600 text-white' 
-                      : 'bg-blue-600 text-white'
-                    : isDark 
-                      ? 'bg-gray-700 hover:bg-gray-600' 
-                      : 'bg-gray-100 hover:bg-gray-200'
-                }`}
-              >
-                5 Anos
-              </button>
-              <DateRangePicker 
-                onApply={handleCustomPeriodSelect} 
-                isDark={isDark} 
-              />
-            </div>
-            
-            <div className="mt-2 sm:mt-0">
-              <button
-                onClick={() => setShowPortfolio(!showPortfolio)}
-                className={`px-4 py-2 rounded-md transition-colors ${
-                  showPortfolio
-                    ? isDark 
-                      ? 'bg-pink-600 text-white' 
-                      : 'bg-pink-600 text-white'
-                    : isDark 
-                      ? 'bg-gray-700 hover:bg-gray-600' 
-                      : 'bg-gray-100 hover:bg-gray-200'
-                }`}
-              >
-                {showPortfolio ? 'Ocultar Tenas Risk Parity' : 'Mostrar Tenas Risk Parity'}
-              </button>
-            </div>
+          <div className="mt-2 sm:mt-0">
+            <button
+              onClick={() => setShowPortfolio(!showPortfolio)}
+              className={`px-4 py-2 rounded-md transition-colors ${
+                showPortfolio
+                  ? isDark ? 'bg-pink-600 text-white' : 'bg-pink-600 text-white'
+                  : isDark ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'
+              }`}
+            >
+              {showPortfolio ? 'Ocultar Tenas Risk Parity' : 'Mostrar Tenas Risk Parity'}
+            </button>
           </div>
+        </div>
 
-          {timeSeriesData.length > 0 ? (
-            <div className="h-96">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart 
-                  data={timeSeriesData}
-                  margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-                >
-                  <CartesianGrid 
-                    strokeDasharray="3 3" 
-                    stroke={isDark ? '#374151' : '#e5e7eb'}
-                  />
-                  <XAxis 
-                    dataKey="date"
-                    angle={-45}
-                    textAnchor="end"
-                    height={60}
-                    interval="preserveEnd"
-                    stroke={isDark ? '#9CA3AF' : '#4B5563'}
-                  />
-                  <YAxis 
-                    label={{ 
-                      value: 'Retorno Acumulado (%)', 
-                      angle: -90, 
-                      position: 'insideLeft',
-                      style: { fill: isDark ? '#9CA3AF' : '#4B5563' }
-                    }}
-                    domain={[yAxisConfig.min, yAxisConfig.max]}
-                    ticks={yAxisConfig.ticks}
-                    tickFormatter={(value) => `${value.toFixed(1)}%`}
-                    stroke={isDark ? '#9CA3AF' : '#4B5563'}
-                  />
-                  <Tooltip 
-                    formatter={(value) => [`${Number(value).toFixed(2)}%`, '']}
-                    labelFormatter={(label) => `Período: ${label}`}
-                    contentStyle={{
-                      backgroundColor: isDark ? '#1F2937' : '#FFFFFF',
-                      border: `1px solid ${isDark ? '#374151' : '#E5E7EB'}`,
-                      color: isDark ? '#FFFFFF' : '#000000'
-                    }}
-                  />
-                  <Legend 
-                    wrapperStyle={{
-                      paddingTop: '10px',
-                      color: isDark ? '#FFFFFF' : '#000000'
-                    }}
-                  />
-                  {benchmarks.map((benchmark) => {
-                    // Pular o portfólio se estiver oculto
-                    if (benchmark.isPortfolio && !showPortfolio) {
-                      return null;
-                    }
-                    
-                    // Verificar se temos dados para este benchmark
-                    const hasData = timeSeriesData.some(dataPoint => 
-                      dataPoint[benchmark.id] !== undefined && dataPoint[benchmark.id] !== null
-                    );
-                    
-                    if (!hasData) {
-                      return null;
-                    }
-                    
-                    return (
-                      <Line
-                        key={benchmark.id}
-                        type="monotone"
-                        dataKey={benchmark.id}
-                        name={benchmark.name}
-                        stroke={benchmark.color}
-                        dot={false}
-                        strokeWidth={benchmark.isPortfolio ? 3 : 2}
-                        activeDot={{ r: 6 }}
-                        isAnimationActive={true}
-                      />
-                    );
-                  })}
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <div className="h-96 flex items-center justify-center border border-dashed border-gray-300 rounded-lg">
-              <p className="text-gray-500">Não há dados disponíveis para exibir no gráfico</p>
-            </div>
-          )}
-
-          <div className="mt-6">
-            <div className="mb-4">
-              <h3 className="text-lg font-semibold mb-2">Composição do Tenas Risk Parity</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                {Object.entries(portfolio.allocation).map(([assetId, weight]) => {
-                  const benchmark = benchmarks.find(b => b.id === assetId);
-                  return (
-                    <div key={assetId} className={`p-2 rounded ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`}>
-                      <div className="flex items-center">
-                        <div 
-                          className="w-3 h-3 rounded-full mr-2" 
-                          style={{ backgroundColor: benchmark?.color || '#ccc' }}
-                        />
-                        <span className="text-sm font-medium">{benchmark?.name || assetId}: {(weight * 100).toFixed(0)}%</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            
-            <table className="w-full text-sm">
-              <thead>
-                <tr>
-                  <th className="text-left py-2">Benchmark</th>
-                  <th className="text-right py-2">
-                    Retorno {
-                      isCustomPeriod 
-                        ? `${new Date(customDateRange.startDate).toLocaleDateString('pt-BR')} - ${new Date(customDateRange.endDate).toLocaleDateString('pt-BR')}` 
-                        : selectedPeriod === '1Y' ? '1 Ano' : selectedPeriod === '3Y' ? '3 Anos' : '5 Anos'
-                    }
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {benchmarks.map((benchmark, index) => {
-                  // Se for o portfólio e estiver oculto, não mostrar na tabela
+        {timeSeriesData.length > 0 ? (
+          <div className="h-96">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart 
+                data={timeSeriesData}
+                margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+              >
+                <CartesianGrid 
+                  strokeDasharray="3 3" 
+                  stroke={isDark ? '#374151' : '#e5e7eb'}
+                />
+                <XAxis 
+                  dataKey="date"
+                  angle={-45}
+                  textAnchor="end"
+                  height={60}
+                  interval="preserveEnd"
+                  stroke={isDark ? '#9CA3AF' : '#4B5563'}
+                />
+                <YAxis 
+                  label={{ 
+                    value: 'Retorno Acumulado (%)', 
+                    angle: -90, 
+                    position: 'insideLeft',
+                    style: { fill: isDark ? '#9CA3AF' : '#4B5563' }
+                  }}
+                  domain={[yAxisConfig.min, yAxisConfig.max]}
+                  ticks={yAxisConfig.ticks}
+                  tickFormatter={(value) => `${value.toFixed(1)}%`}
+                  stroke={isDark ? '#9CA3AF' : '#4B5563'}
+                />
+                <Tooltip 
+                  formatter={(value) => [`${Number(value).toFixed(2)}%`, '']}
+                  labelFormatter={(label) => `Período: ${label}`}
+                  contentStyle={{
+                    backgroundColor: isDark ? '#1F2937' : '#FFFFFF',
+                    border: `1px solid ${isDark ? '#374151' : '#E5E7EB'}`,
+                    color: isDark ? '#FFFFFF' : '#000000'
+                  }}
+                />
+                <Legend 
+                  wrapperStyle={{
+                    paddingTop: '10px',
+                    color: isDark ? '#FFFFFF' : '#000000'
+                  }}
+                />
+                {benchmarks.map((benchmark) => {
+                  // Pular o portfólio se estiver oculto
                   if (benchmark.isPortfolio && !showPortfolio) {
                     return null;
                   }
                   
-                  const returnValue = benchmarkReturns[benchmark.id];
-                  const hasReturn = returnValue !== undefined && returnValue !== null;
+                  // Verificar se temos dados para este benchmark
+                  const hasData = timeSeriesData.some(dataPoint => 
+                    dataPoint[benchmark.id] !== undefined && dataPoint[benchmark.id] !== null
+                  );
                   
-                  const isPortfolio = benchmark.isPortfolio;
+                  if (!hasData) {
+                    return null;
+                  }
                   
                   return (
-                    <tr 
-                      key={benchmark.id} 
-                      className={`border-t ${isDark ? 'border-gray-700' : 'border-gray-200'} ${isPortfolio ? (isDark ? 'bg-gray-700/30' : 'bg-pink-50') : ''}`}
-                    >
-                      <td className="py-2">
-                        <div className="flex items-center">
-                          <div 
-                            className={`w-3 h-3 rounded-full mr-2 ${isPortfolio ? 'animate-pulse' : ''}`}
-                            style={{ backgroundColor: benchmark.color }}
-                          />
-                          <span className={isPortfolio ? 'font-bold' : ''}>
-                            {benchmark.name}
-                            {isPortfolio && ' 🔥'}
-                          </span>
-                        </div>
-                      </td>
-                      <td className={`text-right py-2 ${isPortfolio ? 'font-bold' : ''}`}>
-                        {isLoading ? (
-                          <span className="text-gray-400">Carregando...</span>
-                        ) : (
-                          hasReturn ? `${returnValue.toFixed(2)}%` : '-'
-                        )}
-                      </td>
-                    </tr>
+                    <Line
+                      key={benchmark.id}
+                      type="monotone"
+                      dataKey={benchmark.id}
+                      name={benchmark.name}
+                      stroke={benchmark.color}
+                      dot={false}
+                      strokeWidth={benchmark.isPortfolio ? 3 : 2}
+                      activeDot={{ r: 6 }}
+                      isAnimationActive={true}
+                    />
                   );
                 })}
-              </tbody>
-            </table>
+              </LineChart>
+            </ResponsiveContainer>
           </div>
+        ) : (
+          <div className="h-96 flex items-center justify-center border border-dashed border-gray-300 rounded-lg">
+            <p className="text-gray-500">Não há dados disponíveis para exibir no gráfico</p>
+          </div>
+        )}
+
+        <div className="mt-6">
+          <div className="mb-4">
+            <h3 className="text-lg font-semibold mb-2">Composição do Tenas Risk Parity</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              {Object.entries(portfolio.allocation).map(([assetId, weight]) => {
+                const benchmark = benchmarks.find(b => b.id === assetId);
+                return (
+                  <div key={assetId} className={`p-2 rounded ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                    <div className="flex items-center">
+                      <div 
+                        className="w-3 h-3 rounded-full mr-2" 
+                        style={{ backgroundColor: benchmark?.color || '#ccc' }}
+                      />
+                      <span className="text-sm font-medium">{benchmark?.name || assetId}: {(weight * 100).toFixed(0)}%</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          
+          <table className="w-full text-sm">
+            <thead>
+              <tr>
+                <th className="text-left py-2">Benchmark</th>
+                <th className="text-right py-2">
+                  Retorno {
+                    isCustomPeriod 
+                      ? `${new Date(customDateRange.startDate).toLocaleDateString('pt-BR')} - ${new Date(customDateRange.endDate).toLocaleDateString('pt-BR')}` 
+                      : selectedPeriod === '1Y' ? '1 Ano' : selectedPeriod === '3Y' ? '3 Anos' : '5 Anos'
+                  }
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {benchmarks.map((benchmark) => {
+                // Se for o portfólio e estiver oculto, não mostrar na tabela
+                if (benchmark.isPortfolio && !showPortfolio) {
+                  return null;
+                }
+                
+                const returnValue = benchmarkReturns[benchmark.id];
+                const hasReturn = returnValue !== undefined && returnValue !== null;
+                
+                const isPortfolio = benchmark.isPortfolio;
+                
+                return (
+                  <tr 
+                    key={benchmark.id} 
+                    className={`border-t ${isDark ? 'border-gray-700' : 'border-gray-200'} ${isPortfolio ? (isDark ? 'bg-gray-700/30' : 'bg-pink-50') : ''}`}
+                  >
+                    <td className="py-2">
+                      <div className="flex items-center">
+                        <div 
+                          className={`w-3 h-3 rounded-full mr-2 ${isPortfolio ? 'animate-pulse' : ''}`}
+                          style={{ backgroundColor: benchmark.color }}
+                        />
+                        <span className={isPortfolio ? 'font-bold' : ''}>
+                          {benchmark.name}
+                          {isPortfolio && ' 🔥'}
+                        </span>
+                      </div>
+                    </td>
+                    <td className={`text-right py-2 ${isPortfolio ? 'font-bold' : ''}`}>
+                      {hasReturn ? `${returnValue.toFixed(2)}%` : '-'}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
