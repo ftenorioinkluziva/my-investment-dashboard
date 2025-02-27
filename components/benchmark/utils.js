@@ -68,7 +68,7 @@ export const processHistoricalData = (results) => {
       // Tratamento especial para CDI
       if (assetId === 'CDI') {
         // Para CDI, calcular o valor acumulado corretamente
-        let baseValue = 1.0; // Valor inicial (100%)
+       
         let accumulatedValue = 1.0; // Começamos com 1 (100%)
 
         assetData.forEach((point, index) => {
