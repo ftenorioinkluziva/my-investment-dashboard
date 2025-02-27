@@ -34,7 +34,9 @@ export async function GET(request: NextRequest) {
     if (!asset) {
       return NextResponse.json({ error: 'Asset not found' }, { status: 404 });
     }
-
+    console.log(`Ativo ${symbol} encontrado. Tipo: ${asset.type}`);
+    console.log(`Buscando preços desde ${start.toISOString()} até ${end.toISOString()}`);
+    
     // Buscar preços do banco para o período especificado
     const prices = await prisma.assetPrice.findMany({
       where: {
@@ -53,8 +55,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       data: prices.map(price => ({
         close: price.price,
-        unixTime: price.date.getTime(),
-        volume: price.volume || undefined
+        unixTime: price.date.getTime()
       }))
     });
   } catch (error) {

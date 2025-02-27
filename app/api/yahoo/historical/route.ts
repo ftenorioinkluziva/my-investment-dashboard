@@ -5,6 +5,7 @@ import prisma from '@/lib/prisma';
 export async function GET(request: NextRequest) {
   console.log("Endpoint /api/yahoo/historical chamado");
   const { searchParams } = new URL(request.url);
+  console.log("Parâmetros da URL:", searchParams);
   const symbol = searchParams.get('symbol');
   const period = searchParams.get('period') || '3Y';
   console.log(`Parâmetros recebidos: symbol=${symbol}, period=${period}`);

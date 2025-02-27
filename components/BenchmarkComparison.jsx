@@ -38,13 +38,13 @@ const BenchmarkComparison = () => {
     { id: 'B5P211', name: 'B5P211 (IMAB5)', color: isDark ? '#FBBF24' : '#FFC107' },
     { id: 'FIXA11', name: 'FIXA11 (Pré)', color: isDark ? '#FB923C' : '#FF9800' },
     { id: 'CDI', name: 'CDI', color: isDark ? '#94A3B8' : '#607D8B' },
-    { id: 'USD', name: 'USD/BRL (Dólar)', color: isDark ? '#D1D5DB' : '#333333' },
+    { id: 'USDBRL=X', name: 'USD/BRL (Dólar)', color: isDark ? '#D1D5DB' : '#333333' },
     { id: 'PORTFOLIO', name: 'Tenas Risk Parity', color: isDark ? '#EC4899' : '#E91E63', isPortfolio: true }
   ];
 
   const fetchData = async () => {
     try {
-      console.log("Iniciando fetchData");
+ 
       setIsLoading(true);
       
       // Definir o período para busca dos dados
@@ -54,41 +54,19 @@ const BenchmarkComparison = () => {
         // Usar período personalizado
         startDate = new Date(customDateRange.startDate);
         endDate = new Date(customDateRange.endDate);
-      } else {
-        // Usar período predefinido (1, 3 ou 5 anos)
-        const now = new Date();
-        const yearsToSubtract = selectedPeriod === '1Y' ? 1 : selectedPeriod === '3Y' ? 3 : 5;
-        startDate = new Date();
-        startDate.setFullYear(now.getFullYear() - yearsToSubtract);
-        endDate = now;
       }
-      
-      const startTimestamp = startDate.getTime();
-      const endTimestamp = endDate.getTime();
       
       console.log(`Período selecionado: ${startDate.toISOString()} até ${endDate.toISOString()}`);
       
-      // Teste de conexão da API
-      try {
-        const pingResponse = await fetch('/api/ping');
-        const pingData = await pingResponse.json();
-        console.log('API connection test:', pingData);
-      } catch (pingError) {
-        console.error('API ping test failed:', pingError);
-      }
       
       // Buscar dados dos benchmarks
       const stockPromises = benchmarks
         .filter(benchmark => !benchmark.isPortfolio) // Excluir o portfólio, que é calculado depois
         .map(async (benchmark) => {
-          try {
-            console.log(`Buscando dados para ${benchmark.id}`);
-            let response;
-            
+          try {           
+            let response;            
             if (isCustomPeriod) {
               response = await fetch(`/api/yahoo/historical/custom?symbol=${benchmark.id}&startDate=${startDate.toISOString()}&endDate=${endDate.toISOString()}`);
-            } else {
-              response = await fetch(`/api/yahoo/historical?symbol=${benchmark.id}&period=${selectedPeriod}`);
             }
             
             if (!response.ok) {
@@ -98,7 +76,7 @@ const BenchmarkComparison = () => {
             }
             
             const data = await response.json();
-            console.log(`Recebidos ${data.data?.length || 0} pontos para ${benchmark.id}`);
+            
             
             // Se não houver dados, retornar um array vazio
             if (!data.data || data.data.length === 0) {
@@ -111,10 +89,11 @@ const BenchmarkComparison = () => {
             
             // Ajustar os dados para começar da data selecionada
             let adjustedData = data.data;
+            
             if (!isCustomPeriod && selectedPeriod !== '5Y') {
               // Filtrar dados para garantir que só temos dados a partir da data de início
               adjustedData = data.data.filter(point => new Date(point.unixTime) >= startDate);
-              console.log(`Filtrados ${adjustedData.length} pontos para ${benchmark.id} após ${startDate.toISOString()}`);
+             
             }
             
             return {
@@ -133,7 +112,7 @@ const BenchmarkComparison = () => {
       
       // Esperar todas as requisições terminarem
       const stockResults = await Promise.all(stockPromises);
-      console.log("Todos os dados recebidos, resultados:", stockResults.map(r => `${r.id}: ${r.data.length} pontos`));
+     
       
       // Verificar se temos dados suficientes
       const hasData = stockResults.some(result => result.data && result.data.length > 0);
@@ -147,7 +126,7 @@ const BenchmarkComparison = () => {
       
       // Processar dados históricos
       const processedData = processHistoricalData(stockResults);
-      console.log(`Dados processados: ${processedData.length} pontos`);
+     
       
       if (processedData.length === 0) {
         console.warn("Não foi possível processar os dados para exibição no gráfico");
@@ -177,7 +156,7 @@ const BenchmarkComparison = () => {
       setBenchmarkReturns({});
     } finally {
       setIsLoading(false);
-      console.log("Loading finalizado");
+  
     }
   };
 
@@ -249,7 +228,7 @@ const BenchmarkComparison = () => {
       if (result.data.length > 0) {
         // O primeiro ponto já é garantido ser após a data de início comum
         initialPrices[result.id] = result.data[0].close;
-        console.log(`Initial price for ${result.id}: ${initialPrices[result.id]} at ${new Date(result.data[0].unixTime).toISOString()}`);
+     
       }
     });
   
@@ -270,11 +249,11 @@ const BenchmarkComparison = () => {
           if (closestDataPoint) {
             const initialPrice = initialPrices[result.id];
             
-            // Tratamento especial para CDI, que já está como valor acumulado
+            // Tratamento especial para CDI, que já está com retorno percentual            
             if (result.id === 'CDI') {
-              // O close do CDI já é um fator acumulado, então calculamos diretamente
-              const returnPercentage = (closestDataPoint.close - 1) * 100;
-              dataPoint[result.id] = returnPercentage;
+              // Se o ID do ativo é 'CDI', apenas acumular o retorno, pois já é um valor percentual
+              dataPoint[result.id] = (dataPoint[result.id] || 0) + closestDataPoint.close;
+
             } else {
               // Para outros ativos, calculamos o retorno percentual normal
               const returnPercentage = ((closestDataPoint.close - initialPrice) / initialPrice) * 100;
@@ -283,8 +262,9 @@ const BenchmarkComparison = () => {
           }
         }
       });
-  
+
       return dataPoint;
+
     });
   
     // Filtrar pontos de dados incompletos
@@ -292,9 +272,6 @@ const BenchmarkComparison = () => {
       // Verificar se o ponto tem pelo menos um benchmark além da data
       return Object.keys(point).some(key => key !== 'date' && key !== 'timestamp');
     });
-    
-    // Log para verificação
-    console.log(`Created ${filteredDataPoints.length} data points for the chart`);
     
     return filteredDataPoints;
   };
@@ -390,6 +367,8 @@ const BenchmarkComparison = () => {
   
   // Função para calcular os retornos para exibição na tabela
   const calculateBenchmarkReturns = (data) => {
+    console.log("Calculando retornos para exibição na tabela...");
+    console.log(data);
     if (!data || data.length === 0) {
       return {};
     }
@@ -404,7 +383,7 @@ const BenchmarkComparison = () => {
         returns[benchmark.id] = lastDataPoint[benchmark.id];
       }
     });
-    
+    console.log(returns);
     return returns;
   };
 
@@ -424,7 +403,7 @@ const BenchmarkComparison = () => {
 
   // Executa quando o componente monta e quando o período ou outras configurações mudam
   useEffect(() => {
-    console.log('Executando fetchData no useEffect...');
+   
     if (!isCustomPeriod || (isCustomPeriod && customDateRange.startDate && customDateRange.endDate)) {
       fetchData();
     }
